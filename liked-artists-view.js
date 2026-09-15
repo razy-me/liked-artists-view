@@ -1176,6 +1176,22 @@
                 console.warn("LikedArtistsView: clearQueue failed", err);
             }
         }
+
+        try {
+            if (Spicetify.Queue?.nextTracks && Spicetify.Queue.nextTracks.length > 0) {
+                const tracksToRemove = Spicetify.Queue.nextTracks.map(t => ({
+                    uri: t.uri,
+                    uid: t.uid
+                }));
+                if (typeof Spicetify.removeFromQueue === 'function') {
+                    await Spicetify.removeFromQueue(tracksToRemove);
+                } else if (Spicetify.Platform?.PlayerAPI?.removeFromQueue) {
+                    await Spicetify.Platform.PlayerAPI.removeFromQueue(tracksToRemove);
+                }
+            }
+        } catch (e) {
+            console.warn("LikedArtistsView: removeFromQueue failed", e);
+        }
     }
 
     async function queueTracks(trackUris) {
@@ -1363,18 +1379,22 @@
         const shouldShuffle = isShuffleActive();
 
         try {
+            // 1. Clear any existing queue from previous artist before switching
+            await clearQueue();
+
             // Respect shuffle state from Liked Songs playlist
             const playList = shouldShuffle ? shuffleArray(uris) : [...uris];
 
-            // 1. Play first track standalone
+            // 2. Play first track standalone
             await startPlayback(playList[0]);
 
-            // 2. Synchronize player shuffle mode AFTER track starts so Spotify doesn't reset it
-            await new Promise(r => setTimeout(r, 60));
+            // 3. Synchronize player shuffle mode AFTER track starts so Spotify doesn't reset it
+            await new Promise(r => setTimeout(r, 120));
             await setPlayerShuffle(shouldShuffle);
 
-            // 3. Clear old queue and add remaining tracks
+            // 4. Clear queue again in case Spotify pre-buffered previous tracks during transition
             await clearQueue();
+            await new Promise(r => setTimeout(r, 60));
 
             if (playList.length > 1) {
                 await queueTracks(playList.slice(1, 150));
@@ -1550,11 +1570,15 @@
                 }
             }
 
+            // 1. Clear any existing queue before playing
+            await clearQueue();
+
             await startPlayback(uri);
 
-            await new Promise(r => setTimeout(r, 60));
+            await new Promise(r => setTimeout(r, 120));
             await setPlayerShuffle(shouldShuffle);
             await clearQueue();
+            await new Promise(r => setTimeout(r, 60));
 
             if (remaining.length > 0) {
                 await queueTracks(remaining);
