@@ -1230,6 +1230,29 @@
         }
     }
 
+    function shuffleArray(arr) {
+        const copy = [...arr];
+        for (let i = copy.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [copy[i], copy[j]] = [copy[j], copy[i]];
+        }
+        return copy;
+    }
+
+    async function enableShuffle() {
+        if (Spicetify.Platform?.PlayerAPI?.setShuffle) {
+            try {
+                await Spicetify.Platform.PlayerAPI.setShuffle(true);
+            } catch (err) {
+                console.warn("LikedArtistsView: PlayerAPI.setShuffle failed", err);
+            }
+        } else if (Spicetify.Player?.setShuffle) {
+            try {
+                Spicetify.Player.setShuffle(true);
+            } catch (err) {}
+        }
+    }
+
     async function playArtistSongs(artistUri) {
         const artist = cachedArtists.find(a => a.uri === artistUri);
         if (!artist || !artist.songs || !artist.songs.length) return;
@@ -1241,18 +1264,24 @@
         }
 
         try {
-            // 1. Play first track standalone (empty context prevents Spotify from loading the 5000+ liked songs playlist)
-            await startPlayback(uris[0]);
+            // Enable Spotify shuffle mode on player
+            await enableShuffle();
 
-            // 2. Clear old queue and add remaining tracks from this artist
+            // Shuffle artist tracks
+            const shuffled = shuffleArray(uris);
+
+            // 1. Play first shuffled track standalone
+            await startPlayback(shuffled[0]);
+
+            // 2. Clear old queue and add remaining shuffled tracks
             await new Promise(r => setTimeout(r, 100));
             await clearQueue();
 
-            if (uris.length > 1) {
-                await queueTracks(uris.slice(1, 150));
+            if (shuffled.length > 1) {
+                await queueTracks(shuffled.slice(1, 150));
             }
 
-            window.Spicetify.showNotification(`Spielt: ${artist.name}`, false);
+            window.Spicetify.showNotification(`Spielt: ${artist.name} (Shuffle)`, false);
         } catch (err) {
             console.error("LikedArtistsView: Artist playback failed", err);
             try {
@@ -1408,9 +1437,15 @@
                     const uris = artist.songs
                         .map(s => s.track?.uri || s.uri)
                         .filter(u => u && !u.startsWith('spotify:local:'));
-                    const idx = uris.indexOf(uri);
-                    if (idx !== -1 && idx < uris.length - 1) {
-                        remaining = uris.slice(idx + 1, idx + 150);
+                    const isShuffle = !!(Spicetify.Player?.getShuffle && Spicetify.Player.getShuffle());
+                    if (isShuffle) {
+                        const otherTracks = uris.filter(u => u !== uri);
+                        remaining = shuffleArray(otherTracks).slice(0, 150);
+                    } else {
+                        const idx = uris.indexOf(uri);
+                        if (idx !== -1 && idx < uris.length - 1) {
+                            remaining = uris.slice(idx + 1, idx + 150);
+                        }
                     }
                 }
             }
