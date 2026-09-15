@@ -1318,6 +1318,38 @@
         return false;
     }
 
+    async function setPlayerShuffle(enable) {
+        if (Spicetify.Platform?.PlayerAPI?.setShuffle) {
+            try {
+                await Spicetify.Platform.PlayerAPI.setShuffle(enable);
+            } catch (err) {
+                console.warn("LikedArtistsView: PlayerAPI.setShuffle failed", err);
+            }
+        }
+        if (Spicetify.Player?.setShuffle) {
+            try {
+                Spicetify.Player.setShuffle(enable);
+            } catch (err) {}
+        }
+
+        // Verify and enforce on the bottom player bar if needed
+        setTimeout(() => {
+            try {
+                const bottomBtn = document.querySelector('[data-testid="control-button-shuffle"], .main-playbackControls-playbackControls button[aria-label*="Shuffle"], .main-playbackControls-playbackControls button[aria-label*="Zufall"], .player-controls [data-testid="control-button-shuffle"]');
+                if (bottomBtn) {
+                    const isChecked = bottomBtn.getAttribute('aria-checked') === 'true';
+                    const isGreen = isElementGreen(bottomBtn);
+                    const isActive = isChecked || isGreen;
+                    if (enable && !isActive) {
+                        bottomBtn.click();
+                    } else if (!enable && isActive) {
+                        bottomBtn.click();
+                    }
+                }
+            } catch (e) {}
+        }, 120);
+    }
+
     async function playArtistSongs(artistUri) {
         const artist = cachedArtists.find(a => a.uri === artistUri);
         if (!artist || !artist.songs || !artist.songs.length) return;
@@ -1331,27 +1363,17 @@
         const shouldShuffle = isShuffleActive();
 
         try {
-            // Synchronize player shuffle mode with playlist shuffle state
-            if (shouldShuffle) {
-                if (Spicetify.Platform?.PlayerAPI?.setShuffle) {
-                    try {
-                        await Spicetify.Platform.PlayerAPI.setShuffle(true);
-                    } catch (err) {}
-                } else if (Spicetify.Player?.setShuffle) {
-                    try {
-                        Spicetify.Player.setShuffle(true);
-                    } catch (err) {}
-                }
-            }
-
             // Respect shuffle state from Liked Songs playlist
             const playList = shouldShuffle ? shuffleArray(uris) : [...uris];
 
             // 1. Play first track standalone
             await startPlayback(playList[0]);
 
-            // 2. Clear old queue and add remaining tracks
-            await new Promise(r => setTimeout(r, 100));
+            // 2. Synchronize player shuffle mode AFTER track starts so Spotify doesn't reset it
+            await new Promise(r => setTimeout(r, 60));
+            await setPlayerShuffle(shouldShuffle);
+
+            // 3. Clear old queue and add remaining tracks
             await clearQueue();
 
             if (playList.length > 1) {
@@ -1517,15 +1539,6 @@
                         .filter(u => u && !u.startsWith('spotify:local:'));
                     const shouldShuffle = isShuffleActive();
                     if (shouldShuffle) {
-                        if (Spicetify.Platform?.PlayerAPI?.setShuffle) {
-                            try {
-                                await Spicetify.Platform.PlayerAPI.setShuffle(true);
-                            } catch (err) {}
-                        } else if (Spicetify.Player?.setShuffle) {
-                            try {
-                                Spicetify.Player.setShuffle(true);
-                            } catch (err) {}
-                        }
                         const otherTracks = uris.filter(u => u !== uri);
                         remaining = shuffleArray(otherTracks).slice(0, 150);
                     } else {
@@ -1539,7 +1552,8 @@
 
             await startPlayback(uri);
 
-            await new Promise(r => setTimeout(r, 100));
+            await new Promise(r => setTimeout(r, 60));
+            await setPlayerShuffle(shouldShuffle);
             await clearQueue();
 
             if (remaining.length > 0) {
