@@ -134,6 +134,7 @@
             display: flex;
             flex-direction: column;
             justify-content: center;
+            min-width: 0;
         }
 
         .lav-artist-name {
@@ -141,6 +142,9 @@
             font-weight: 700;
             font-size: 1rem;
             margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .lav-artist-meta {
@@ -221,11 +225,6 @@
             border-radius: 4px;
             cursor: pointer;
             transition: background-color 0.2s;
-            animation: lav-row-in 0.22s ease-out backwards;
-        }
-        @keyframes lav-row-in {
-            from { opacity: 0; transform: translateY(6px); }
-            to   { opacity: 1; transform: translateY(0); }
         }
         .lav-song-row:hover {
             background-color: var(--background-highlight, rgba(255, 255, 255, 0.1));
@@ -252,11 +251,17 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            min-width: 0;
         }
 
         .lav-song-title {
             color: var(--text-base, #fff);
             font-size: 1rem;
+            display: flex;
+            align-items: center;
+            min-width: 0;
+        }
+        .lav-song-title-text {
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -345,8 +350,14 @@
              .replace(/'/g, "&#039;");
     }
 
+    let activateRetries = 0;
+    let activateRetryTimeout = null;
+
     function activate() {
         if (isActive) return;
+        if (Spicetify.Platform.History.location.pathname !== "/collection/tracks") {
+            return;
+        }
         isActive = true;
         console.log("LikedArtistsView: Activating...");
 
@@ -389,24 +400,41 @@
     }
 
     // Retry activation with a hard cap so a stale page never loops forever
-    let activateRetries = 0;
     function scheduleActivateRetry() {
+        if (activateRetryTimeout) clearTimeout(activateRetryTimeout);
         if (activateRetries >= 20) {
             console.warn("LikedArtistsView: Giving up activation after 20 retries.");
             isActive = false;
             return;
         }
         activateRetries++;
-        setTimeout(() => { isActive = false; activate(); }, 400);
+        activateRetryTimeout = setTimeout(() => {
+            isActive = false;
+            if (Spicetify.Platform.History.location.pathname === "/collection/tracks") {
+                activate();
+            }
+        }, 400);
     }
 
     function deactivate() {
+        if (activateRetryTimeout) {
+            clearTimeout(activateRetryTimeout);
+            activateRetryTimeout = null;
+        }
+        activateRetries = 0;
         if (!isActive) return;
         isActive = false;
-        activateRetries = 0;
         console.log("LikedArtistsView: Deactivating...");
 
-        if (domObserver) domObserver.disconnect(); // Stop observing
+        if (domObserver) {
+            domObserver.disconnect();
+            domObserver = null;
+        }
+
+        const mainView = document.querySelector('.main-view-container');
+        if (mainView) {
+            mainView.removeEventListener('input', onSearchInput);
+        }
 
         document.body.classList.remove('lav-hide-native');
 
@@ -517,7 +545,18 @@
         try {
             localStorage.removeItem('lav:meta:lastSync');
             localStorage.removeItem('lav:meta:totalTracks');
+            localStorage.removeItem('lav:meta:lastApiTotal');
             localStorage.removeItem('lav:artistImages');
+            cachedArtists = [];
+            if (!db) {
+                try {
+                    await initDB();
+                } catch (e) {
+                    if (window.indexedDB?.deleteDatabase) {
+                        window.indexedDB.deleteDatabase(DB_NAME);
+                    }
+                }
+            }
             if (db) {
                 const transaction = db.transaction(["tracks"], "readwrite");
                 const store = transaction.objectStore("tracks");
@@ -679,8 +718,9 @@
             // Determine which endpoint works by testing the first batch
             const endpointsToTest = [
                 (l, o) => window.Spicetify.CosmosAsync.get(`sp://core-library/v1/tracks?limit=${l}&offset=${o}`),
-                (l, o) => window.Spicetify.Platform.LibraryAPI.getTracks({ limit: l, offset: o }),
-                (l, o) => window.Spicetify.CosmosAsync.get(`wg://collection/v1/v2/collection?limit=${l}&offset=${o}`)
+                (l, o) => window.Spicetify.Platform?.LibraryAPI?.getTracks ? window.Spicetify.Platform.LibraryAPI.getTracks({ limit: l, offset: o }) : Promise.reject("No LibraryAPI"),
+                (l, o) => window.Spicetify.CosmosAsync.get(`wg://collection/v1/v2/collection?limit=${l}&offset=${o}`),
+                (l, o) => window.Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/me/tracks?limit=${Math.min(l, 50)}&offset=${o}`)
             ];
 
             let lastError = null;
@@ -688,10 +728,19 @@
 
             for (let i = 0; i < endpointsToTest.length; i++) {
                 try {
-                    testRes = await fetchWithTimeout(endpointsToTest[i](limit, offset), 5000);
+                    const testLimit = (i === 3) ? 50 : limit;
+                    testRes = await fetchWithTimeout(endpointsToTest[i](testLimit, offset), 5000);
                     const items = testRes?.items || testRes || [];
                     if (Array.isArray(items)) {
                         endpointToUse = endpointsToTest[i];
+                        if (i === 3) limit = 50;
+                        if (items.length > 0) {
+                            allItems = allItems.concat(items);
+                            offset += limit;
+                            if (items.length < limit) isFetching = false;
+                        } else {
+                            isFetching = false;
+                        }
                         break;
                     }
                 } catch (e) {
@@ -704,7 +753,7 @@
                 throw new Error("Alle API-Endpunkte sind fehlgeschlagen. Letzter Fehler: " + (lastError?.message || lastError));
             }
 
-            // Now fetch all batches
+            // Now fetch remaining batches
             while (isFetching) {
                 let res = await fetchWithTimeout(endpointToUse(limit, offset), 8000);
                 let items = res?.items || res || [];
@@ -713,6 +762,7 @@
                     allItems = allItems.concat(items);
                     offset += limit;
                     if (isActive && !isBackground) renderLoadingView(allItems.length, 0);
+                    if (items.length < limit) isFetching = false;
                 } else {
                     isFetching = false;
                 }
@@ -726,18 +776,20 @@
             if (allItems.length === 0 && !isBackground) {
                 await setMeta("lastSync", Date.now());
                 await setMeta("totalTracks", 0);
+                await setMeta("lastApiTotal", 0);
                 renderEmptyState();
                 return;
             }
             if (allItems.length === 0) {
                 await setMeta("lastSync", Date.now());
                 await setMeta("totalTracks", 0);
+                await setMeta("lastApiTotal", 0);
                 return;
             }
 
             // Normalize items since different APIs return slightly different shapes
             const normalizedTracks = allItems.map(t => {
-                const trackInfo = t.track || t;
+                const trackInfo = t.track || t.item || t;
                 const albumInfo = trackInfo.album || {};
                 return {
                     track: {
@@ -763,6 +815,13 @@
             await setMeta("lastSync", Date.now());
             await setMeta("totalTracks", normalizedTracks.length);
 
+            try {
+                const apiRes = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/me/tracks?limit=1&offset=0`);
+                if (typeof apiRes?.total === 'number') {
+                    await setMeta("lastApiTotal", apiRes.total);
+                }
+            } catch (e) {}
+
         } catch (err) {
             console.error("LikedArtistsView: Fatal error in fetchAllTracksFromAPI", err);
             if (!isBackground) renderErrorView(err.message || err);
@@ -772,11 +831,6 @@
 
     async function loadData() {
         if (!db) await initDB();
-
-        if (cachedArtists && cachedArtists.length > 0) {
-            updateUI();
-            return;
-        }
 
         const lastSync = await getMeta("lastSync");
         const totalTracksMeta = await getMeta("totalTracks") || 0;
@@ -788,6 +842,14 @@
 
         // Cache is valid if synced within TTL and we have tracks
         const isCacheValid = lastSync && (Date.now() - lastSync < TTL_MS);
+
+        if (cachedArtists && cachedArtists.length > 0) {
+            updateUI();
+            if (!isCacheValid) {
+                checkBackgroundRefresh();
+            }
+            return;
+        }
 
         const tracks = await getAllTracksFromDB();
 
@@ -827,16 +889,20 @@
 
     async function checkBackgroundRefresh() {
         try {
-            const cachedTotal = await getMeta("totalTracks") || 0;
+            const lastApiTotal = await getMeta("lastApiTotal");
             const res = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/me/tracks?limit=1&offset=0`);
 
-            if (res.total !== cachedTotal) {
-                console.log(`LikedArtistsView: Total changed (${cachedTotal} -> ${res.total}), refreshing...`);
-                await fetchAllTracksFromAPI();
+            if (typeof res?.total === 'number' && lastApiTotal !== null && res.total !== lastApiTotal) {
+                console.log(`LikedArtistsView: Total changed (${lastApiTotal} -> ${res.total}), refreshing in background...`);
+                await setMeta("lastApiTotal", res.total);
+                await fetchAllTracksFromAPI(true);
                 const tracks = await getAllTracksFromDB();
                 cachedArtists = groupAndSortTracks(tracks);
                 if (isActive) updateUI();
             } else {
+                if (typeof res?.total === 'number') {
+                    await setMeta("lastApiTotal", res.total);
+                }
                 console.log("LikedArtistsView: Total unchanged, skip refresh.");
                 // Update timestamp so we don't check again for 30min
                 await setMeta("lastSync", Date.now());
@@ -854,6 +920,13 @@
     let domObserver = null;
     let searchDebounceTimeout = null;
 
+    function onSearchInput(e) {
+        if (e.target && (e.target.matches('input[role="searchbox"]') || e.target.classList.contains('x-filterBox-searchInput') || e.target.classList.contains('x-filterBox-filterInput'))) {
+            if (searchDebounceTimeout) clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(updateSearchAndFilterState, 100);
+        }
+    }
+
     function initDOMObserver() {
         if (domObserver) return;
 
@@ -864,6 +937,11 @@
 
         const header = document.querySelector('.main-view-container__scroll-node-child') || document.body;
         domObserver.observe(header, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-checked'] });
+
+        const mainView = document.querySelector('.main-view-container');
+        if (mainView) {
+            mainView.addEventListener('input', onSearchInput);
+        }
     }
 
     function updateSearchAndFilterState() {
@@ -906,7 +984,10 @@
 
     // --- UI RENDERER ---
 
+    const SONGS_PADDING = 24;
+
     function formatDuration(ms) {
+        if (!ms || isNaN(ms)) return "0:00";
         const totalSeconds = Math.floor(ms / 1000);
         const minutes = Math.floor(totalSeconds / 60);
         const seconds = totalSeconds % 60;
@@ -932,14 +1013,14 @@
             return;
         }
 
-        // 1st choice: start playback with the whole artist song list as context
+        // 1st choice: start playback with the whole artist song list as context (PUT request)
         try {
-            await window.Spicetify.CosmosAsync.post('https://api.spotify.com/v1/me/player/play', {
+            await window.Spicetify.CosmosAsync.put('https://api.spotify.com/v1/me/player/play', {
                 uris: uris,
                 offset: { uri: uris[0] },
                 position_ms: 0
             });
-            window.Spicetify.showNotification(`Spielt: ${escapeHtml(artist.name)}`, false);
+            window.Spicetify.showNotification(`Spielt: ${artist.name}`, false);
             return;
         } catch (e) {
             console.warn("LikedArtistsView: Context playback failed, falling back to single track", e);
@@ -947,8 +1028,12 @@
 
         // 2nd choice: play just the first track
         try {
-            await window.Spicetify.Player.play(uris[0]);
-            window.Spicetify.showNotification(`Spielt: ${escapeHtml(artist.name)}`, false);
+            if (Spicetify.Player.playUri) {
+                await Spicetify.Player.playUri(uris[0]);
+            } else {
+                await Spicetify.Player.play(uris[0]);
+            }
+            window.Spicetify.showNotification(`Spielt: ${artist.name}`, false);
         } catch (e2) {
             console.error("LikedArtistsView: Playback failed completely", e2);
             window.Spicetify.showNotification("Wiedergabe fehlgeschlagen", true);
@@ -957,9 +1042,10 @@
 
     function buildArtistRow(artist, topOffset) {
         const isExpanded = expandedArtists.has(artist.uri);
-        const height = ROW_HEIGHT + (isExpanded ? artist.songs.length * SONG_ROW_HEIGHT : 0);
+        const height = ROW_HEIGHT + (isExpanded ? (artist.songs.length * SONG_ROW_HEIGHT + SONGS_PADDING) : 0);
         const imgUrl = artist.fallbackImage || PLACEHOLDER_IMAGE;
         const currentUri = Spicetify.Player.data?.item?.uri;
+        const isCurrentlyPlaying = !!(Spicetify.Player.isPlaying && Spicetify.Player.isPlaying());
 
         const el = document.createElement('div');
         el.className = 'lav-artist-container';
@@ -971,7 +1057,7 @@
         let html = `
             <div class="lav-artist-row" data-artist-uri="${escapeHtml(artist.uri)}" data-expanded="${isExpanded}">
                 <div class="lav-image-container">
-                    <img class="lav-artist-image lav-image-loaded" src="${imgUrl}" loading="lazy" alt="">
+                    <img class="lav-artist-image lav-image-loaded" src="${escapeHtml(imgUrl)}" loading="lazy" alt="">
                     <div class="lav-play-button" data-artist-uri="${escapeHtml(artist.uri)}" title="${escapeHtml(artist.name)} abspielen">
                         <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                     </div>
@@ -989,14 +1075,18 @@
         if (isExpanded) {
             let songsHtml = '<div class="lav-songs-list">';
             artist.songs.forEach((song, i) => {
-                const isPlaying = currentUri === song.uri;
-                const eqBars = isPlaying ? '<div class="lav-eq"><span></span><span></span><span></span></div>' : '';
+                const isSongActive = currentUri === song.uri;
+                const isSongPlaying = isSongActive && isCurrentlyPlaying;
+                const eqBars = isSongPlaying ? '<div class="lav-eq"><span></span><span></span><span></span></div>' : '';
                 songsHtml += `
-                    <div class="lav-song-row ${isPlaying ? 'lav-song-row--playing' : ''}" data-song-uri="${escapeHtml(song.uri)}" data-index="${i}" style="--row-i: ${i}">
+                    <div class="lav-song-row ${isSongActive ? 'lav-song-row--playing' : ''}" data-song-uri="${escapeHtml(song.uri)}" data-index="${i}" style="--row-i: ${i}">
                         <div class="lav-song-num">${i + 1}</div>
-                        <img class="lav-song-cover" src="${song.albumImage || PLACEHOLDER_IMAGE}" loading="lazy" alt="">
+                        <img class="lav-song-cover" src="${escapeHtml(song.albumImage || PLACEHOLDER_IMAGE)}" loading="lazy" alt="">
                         <div class="lav-song-details">
-                            <div class="lav-song-title" style="display:flex;align-items:center;">${escapeHtml(song.name)}${eqBars}</div>
+                            <div class="lav-song-title">
+                                <span class="lav-song-title-text">${escapeHtml(song.name)}</span>
+                                ${eqBars}
+                            </div>
                             <div class="lav-song-album">${escapeHtml(song.albumName)}</div>
                         </div>
                         <div class="lav-song-duration">${formatDuration(song.durationMs)}</div>
@@ -1008,15 +1098,6 @@
         }
 
         el.innerHTML = html;
-
-        // Stagger the entrance animation of freshly rendered song rows
-        if (prefersReducedMotion) {
-            el.querySelectorAll('.lav-song-row').forEach(row => (row.style.animation = 'none'));
-        } else {
-            el.querySelectorAll('.lav-song-row').forEach((row, i) => {
-                row.style.animationDelay = `${Math.min(i * 18, 360)}ms`;
-            });
-        }
 
         // Events
         const rowHeader = el.querySelector('.lav-artist-row');
@@ -1060,7 +1141,7 @@
         for (let i = 0; i < renderData.length; i++) {
             offsets.push(currentTop);
             const artist = renderData[i];
-            const height = ROW_HEIGHT + (expandedArtists.has(artist.uri) ? artist.songs.length * SONG_ROW_HEIGHT : 0);
+            const height = ROW_HEIGHT + (expandedArtists.has(artist.uri) ? (artist.songs.length * SONG_ROW_HEIGHT + SONGS_PADDING) : 0);
 
             if (startIndex === -1 && currentTop + height > scrollTop - (BUFFER_ROWS * ROW_HEIGHT)) {
                 startIndex = i;
@@ -1091,23 +1172,44 @@
 
     function playTrack(uri) {
         if (!uri) return;
-        Spicetify.Platform.PlayerAPI.play(
-            { uri: uri },
-            { uri: "spotify:collection:tracks" },
-            {}
-        ).catch(e => {
-            console.warn("LikedArtistsView: PlayerAPI.play failed, trying Spicetify.Player.play", e);
-            try { Spicetify.Player.play(uri); } catch (e2) { console.error("LikedArtistsView: Playback failed", e2); }
-        });
+        try {
+            if (Spicetify.Platform?.PlayerAPI?.play) {
+                Spicetify.Platform.PlayerAPI.play(
+                    { uri: uri },
+                    { uri: "spotify:collection:tracks" },
+                    {}
+                ).catch(e => {
+                    console.warn("LikedArtistsView: PlayerAPI.play failed, trying Spicetify.Player.playUri", e);
+                    if (Spicetify.Player.playUri) {
+                        Spicetify.Player.playUri(uri);
+                    } else {
+                        Spicetify.Player.play(uri);
+                    }
+                });
+            } else if (Spicetify.Player.playUri) {
+                Spicetify.Player.playUri(uri);
+            } else {
+                Spicetify.Player.play(uri);
+            }
+        } catch (err) {
+            console.warn("LikedArtistsView: Play error", err);
+            try {
+                if (Spicetify.Player.playUri) Spicetify.Player.playUri(uri);
+                else Spicetify.Player.play(uri);
+            } catch (e2) {
+                console.error("LikedArtistsView: Playback failed", e2);
+            }
+        }
     }
 
     function onSongChange() {
         if (!isActive) return;
         const currentUri = Spicetify.Player.data?.item?.uri;
+        const isCurrentlyPlaying = !!(Spicetify.Player.isPlaying && Spicetify.Player.isPlaying());
 
-        // Remove previous highlights
-        const previous = document.querySelectorAll('.lav-song-row--playing');
-        previous.forEach(el => el.classList.remove('lav-song-row--playing'));
+        // Remove previous highlights and equalizers
+        document.querySelectorAll('.lav-song-row--playing').forEach(el => el.classList.remove('lav-song-row--playing'));
+        document.querySelectorAll('.lav-eq').forEach(el => el.remove());
 
         if (currentUri) {
             // Add new highlight
@@ -1115,11 +1217,9 @@
             const activeRows = document.querySelectorAll(`.lav-song-row[data-song-uri="${safeUri}"]`);
             activeRows.forEach(el => {
                 el.classList.add('lav-song-row--playing');
-                if (!el.querySelector('.lav-eq')) {
+                if (isCurrentlyPlaying && !el.querySelector('.lav-eq')) {
                     const title = el.querySelector('.lav-song-title');
                     if (title) {
-                        title.style.display = 'flex';
-                        title.style.alignItems = 'center';
                         title.insertAdjacentHTML('beforeend', '<div class="lav-eq"><span></span><span></span><span></span></div>');
                     }
                 }
@@ -1128,6 +1228,7 @@
     }
 
     Spicetify.Player.addEventListener("songchange", onSongChange);
+    Spicetify.Player.addEventListener("onplaypause", onSongChange);
 
     function updateUI() {
         if (!customViewContainer) return;
