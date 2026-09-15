@@ -364,6 +364,7 @@
     let isActive = false;
     let isViewActive = localStorage.getItem('lav:view-active') !== 'false';
     let toggleButton = null;
+    let toggleButtonTippy = null;
     let customViewContainer = null;
     let originalTrackListContainer = null;
     let scrollContainer = null;
@@ -387,10 +388,31 @@
     let activateRetries = 0;
     let activateRetryTimeout = null;
 
+    function getToggleTooltipText() {
+        return isViewActive 
+            ? "Künstleransicht aktiv (Klicken für Standard-Songliste)" 
+            : "Standard-Songliste aktiv (Klicken für Künstleransicht)";
+    }
+
     function updateToggleButtonState() {
         if (!toggleButton) return;
         toggleButton.classList.toggle('active', isViewActive);
-        toggleButton.setAttribute('title', isViewActive ? "Künstleransicht aktiv (Klicken für Standard-Songliste)" : "Standard-Songliste aktiv (Klicken für Künstleransicht)");
+        const text = getToggleTooltipText();
+        toggleButton.setAttribute('aria-label', text);
+
+        if (window.Spicetify && Spicetify.Tippy) {
+            if (!toggleButtonTippy) {
+                toggleButtonTippy = Spicetify.Tippy(toggleButton, {
+                    ...(Spicetify.TippyProps || {}),
+                    content: text,
+                    placement: 'top',
+                });
+            } else {
+                toggleButtonTippy.setContent(text);
+            }
+        } else {
+            toggleButton.setAttribute('title', text);
+        }
     }
 
     function toggleArtistView() {
@@ -448,9 +470,25 @@
         updateToggleButtonState();
 
         if (!actionBar.contains(toggleButton)) {
-            const filterBox = actionBar.querySelector('.x-filterBox-filterInput') || actionBar.querySelector('.x-filterBox-expandButton');
-            if (filterBox && filterBox.parentElement) {
-                filterBox.parentElement.insertBefore(toggleButton, filterBox);
+            const filterBtn = actionBar.querySelector('.x-filterBox-expandButton') || actionBar.querySelector('.x-filterBox-filterInput');
+            if (filterBtn) {
+                // Find the search box root container inside the action bar / trailing controls
+                // so toggleButton is inserted as a true sibling OUTSIDE the search box's tooltip container
+                let searchContainer = filterBtn;
+                while (
+                    searchContainer.parentElement &&
+                    searchContainer.parentElement !== actionBar &&
+                    !searchContainer.parentElement.querySelector('[data-testid*="sort"], [class*="sortBox"], [class*="Sort"]') &&
+                    !searchContainer.parentElement.classList.contains('main-actionBar-ActionBarRow')
+                ) {
+                    searchContainer = searchContainer.parentElement;
+                }
+
+                if (searchContainer && searchContainer.parentElement) {
+                    searchContainer.parentElement.insertBefore(toggleButton, searchContainer);
+                } else {
+                    actionBar.appendChild(toggleButton);
+                }
             } else {
                 actionBar.appendChild(toggleButton);
             }
