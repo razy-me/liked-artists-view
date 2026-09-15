@@ -321,6 +321,38 @@
         .lav-hide-native .main-trackList-trackList {
             display: none !important;
         }
+
+        /* In-Playlist Toggle Button */
+        .lav-toggle-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-subdued, #a7a7a7);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            transition: color 0.15s ease, transform 0.15s ease, background-color 0.15s ease;
+            margin: 0 6px;
+            padding: 0;
+            outline: none;
+            flex-shrink: 0;
+        }
+        .lav-toggle-btn:hover {
+            color: var(--text-base, #fff);
+            background-color: var(--background-tinted-highlight, rgba(255, 255, 255, 0.1));
+            transform: scale(1.08);
+        }
+        .lav-toggle-btn.active {
+            color: var(--text-bright-accent, #1db954);
+        }
+        .lav-toggle-btn svg {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
     `;
 
     // Inject CSS
@@ -330,6 +362,8 @@
 
     // State
     let isActive = false;
+    let isViewActive = localStorage.getItem('lav:view-active') !== 'false';
+    let toggleButton = null;
     let customViewContainer = null;
     let originalTrackListContainer = null;
     let scrollContainer = null;
@@ -353,41 +387,123 @@
     let activateRetries = 0;
     let activateRetryTimeout = null;
 
+    function updateToggleButtonState() {
+        if (!toggleButton) return;
+        toggleButton.classList.toggle('active', isViewActive);
+        toggleButton.setAttribute('title', isViewActive ? "Künstleransicht aktiv (Klicken für Standard-Songliste)" : "Standard-Songliste aktiv (Klicken für Künstleransicht)");
+    }
+
+    function toggleArtistView() {
+        isViewActive = !isViewActive;
+        localStorage.setItem('lav:view-active', isViewActive.toString());
+        updateToggleButtonState();
+
+        if (isViewActive) {
+            document.body.classList.add('lav-hide-native');
+            if (customViewContainer) {
+                customViewContainer.style.display = '';
+                renderVirtualList();
+            } else {
+                activate();
+            }
+            window.Spicetify.showNotification("Künstleransicht aktiviert", false);
+        } else {
+            document.body.classList.remove('lav-hide-native');
+            if (customViewContainer) {
+                customViewContainer.style.display = 'none';
+            }
+            window.Spicetify.showNotification("Standard-Songliste aktiviert", false);
+        }
+    }
+
+    function createOrUpdateToggleButton() {
+        if (Spicetify.Platform.History.location.pathname !== "/collection/tracks") {
+            if (toggleButton && toggleButton.parentElement) {
+                toggleButton.parentElement.removeChild(toggleButton);
+            }
+            return;
+        }
+
+        const actionBar = document.querySelector('.main-actionBar-ActionBarRow') || 
+                          document.querySelector('[data-testid="action-bar-row"]') || 
+                          document.querySelector('.main-actionBar-ActionBar');
+
+        if (!actionBar) return;
+
+        if (!toggleButton) {
+            toggleButton = document.createElement('button');
+            toggleButton.className = 'lav-toggle-btn' + (isViewActive ? ' active' : '');
+            toggleButton.setAttribute('type', 'button');
+            toggleButton.innerHTML = `
+                <svg role="img" height="20" width="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                </svg>
+            `;
+            toggleButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleArtistView();
+            });
+        }
+
+        updateToggleButtonState();
+
+        if (!actionBar.contains(toggleButton)) {
+            const filterBox = actionBar.querySelector('.x-filterBox-filterInput') || actionBar.querySelector('.x-filterBox-expandButton');
+            if (filterBox && filterBox.parentElement) {
+                filterBox.parentElement.insertBefore(toggleButton, filterBox);
+            } else {
+                actionBar.appendChild(toggleButton);
+            }
+        }
+    }
+
     function activate() {
         if (isActive) return;
         if (Spicetify.Platform.History.location.pathname !== "/collection/tracks") {
             return;
         }
+
+        // Instant pre-emptive hide to prevent FOUC
+        if (isViewActive) {
+            document.body.classList.add('lav-hide-native');
+        }
+
         isActive = true;
         console.log("LikedArtistsView: Activating...");
+
+        createOrUpdateToggleButton();
 
         const scrollNode = document.querySelector('.main-view-container__scroll-node [data-overlayscrollbars-viewport]') || document.querySelector('.main-view-container__scroll-node');
 
         if (!scrollNode) {
-            console.warn("LikedArtistsView: Scroll node not found, retrying...");
             scheduleActivateRetry();
             return;
         }
 
         const trackList = scrollNode.querySelector('.main-trackList-trackList') || document.querySelector('.main-trackList-trackList');
         if (!trackList) {
-             console.warn("LikedArtistsView: tracklist not found");
              scheduleActivateRetry();
              return;
         }
 
+        activateRetries = 0;
         originalTrackListContainer = trackList.closest('.os-content') || trackList.parentElement;
-
-        document.body.classList.add('lav-hide-native');
 
         if (!customViewContainer) {
             customViewContainer = document.createElement('div');
             customViewContainer.id = 'lav-container';
         }
 
+        if (!isViewActive) {
+            customViewContainer.style.display = 'none';
+        } else {
+            customViewContainer.style.display = '';
+        }
+
         trackList.parentElement.insertBefore(customViewContainer, trackList);
 
         initDOMObserver();
+        createOrUpdateToggleButton();
 
         loadData().then(() => {
             if (isActive) {
@@ -399,11 +515,11 @@
         });
     }
 
-    // Retry activation with a hard cap so a stale page never loops forever
+    // Micro-polling retry so the custom view mounts in milliseconds without user-noticeable lag
     function scheduleActivateRetry() {
         if (activateRetryTimeout) clearTimeout(activateRetryTimeout);
-        if (activateRetries >= 20) {
-            console.warn("LikedArtistsView: Giving up activation after 20 retries.");
+        if (activateRetries >= 80) {
+            console.warn("LikedArtistsView: Giving up activation after retries.");
             isActive = false;
             return;
         }
@@ -413,7 +529,7 @@
             if (Spicetify.Platform.History.location.pathname === "/collection/tracks") {
                 activate();
             }
-        }, 400);
+        }, 30);
     }
 
     function deactivate() {
@@ -434,6 +550,10 @@
         const mainView = document.querySelector('.main-view-container');
         if (mainView) {
             mainView.removeEventListener('input', onSearchInput);
+        }
+
+        if (toggleButton && toggleButton.parentElement) {
+            toggleButton.parentElement.removeChild(toggleButton);
         }
 
         document.body.classList.remove('lav-hide-native');
@@ -933,6 +1053,7 @@
         domObserver = new MutationObserver(() => {
             if (searchDebounceTimeout) clearTimeout(searchDebounceTimeout);
             searchDebounceTimeout = setTimeout(updateSearchAndFilterState, 150);
+            createOrUpdateToggleButton();
         });
 
         const header = document.querySelector('.main-view-container__scroll-node-child') || document.body;
@@ -942,6 +1063,8 @@
         if (mainView) {
             mainView.addEventListener('input', onSearchInput);
         }
+
+        createOrUpdateToggleButton();
     }
 
     function updateSearchAndFilterState() {
@@ -971,10 +1094,12 @@
                 document.body.classList.remove('lav-hide-native');
                 if (customViewContainer) customViewContainer.style.display = 'none';
             } else {
-                document.body.classList.add('lav-hide-native');
-                if (customViewContainer) {
-                    customViewContainer.style.display = ''; // back to CSS default (#lav-container is flex)
-                    renderVirtualList(); // Force re-render to recalculate heights after being hidden
+                if (isViewActive) {
+                    document.body.classList.add('lav-hide-native');
+                    if (customViewContainer) {
+                        customViewContainer.style.display = ''; // back to CSS default (#lav-container is flex)
+                        renderVirtualList(); // Force re-render to recalculate heights after being hidden
+                    }
                 }
             }
         }
@@ -1007,36 +1132,55 @@
         const artist = cachedArtists.find(a => a.uri === artistUri);
         if (!artist || !artist.songs || !artist.songs.length) return;
 
-        const uris = artist.songs.map(s => s.track?.uri || s.uri).filter(u => u && !u.startsWith('spotify:local:')).slice(0, 100);
+        const uris = artist.songs.map(s => s.track?.uri || s.uri).filter(u => u && !u.startsWith('spotify:local:'));
         if (uris.length === 0) {
             window.Spicetify.showNotification("Keine abspielbaren Songs gefunden", true);
             return;
         }
 
-        // 1st choice: start playback with the whole artist song list as context (PUT request)
         try {
-            await window.Spicetify.CosmosAsync.put('https://api.spotify.com/v1/me/player/play', {
-                uris: uris,
-                offset: { uri: uris[0] },
-                position_ms: 0
-            });
-            window.Spicetify.showNotification(`Spielt: ${artist.name}`, false);
-            return;
-        } catch (e) {
-            console.warn("LikedArtistsView: Context playback failed, falling back to single track", e);
-        }
-
-        // 2nd choice: play just the first track
-        try {
-            if (Spicetify.Player.playUri) {
+            // 1. Play the first track immediately through local player
+            if (Spicetify.Platform?.PlayerAPI?.play) {
+                await Spicetify.Platform.PlayerAPI.play(
+                    { uri: uris[0] },
+                    { uri: "spotify:collection:tracks" },
+                    {}
+                );
+            } else if (Spicetify.Player?.playUri) {
                 await Spicetify.Player.playUri(uris[0]);
-            } else {
+            } else if (Spicetify.Player?.play) {
                 await Spicetify.Player.play(uris[0]);
             }
+
+            // 2. Queue remaining tracks of this artist so playback continues seamlessly
+            if (uris.length > 1) {
+                const remaining = uris.slice(1, 80).map(uri => ({ uri }));
+                if (Spicetify.Platform?.PlayerAPI?.addToQueue) {
+                    try {
+                        await Spicetify.Platform.PlayerAPI.addToQueue(remaining);
+                    } catch (qe) {
+                        if (Spicetify.addToQueue) {
+                            remaining.forEach(item => Spicetify.addToQueue(item));
+                        }
+                    }
+                } else if (Spicetify.addToQueue) {
+                    remaining.forEach(item => Spicetify.addToQueue(item));
+                }
+            }
+
             window.Spicetify.showNotification(`Spielt: ${artist.name}`, false);
-        } catch (e2) {
-            console.error("LikedArtistsView: Playback failed completely", e2);
-            window.Spicetify.showNotification("Wiedergabe fehlgeschlagen", true);
+        } catch (err) {
+            console.error("LikedArtistsView: Artist playback failed", err);
+            try {
+                if (Spicetify.Player?.playUri) {
+                    await Spicetify.Player.playUri(uris[0]);
+                    window.Spicetify.showNotification(`Spielt: ${artist.name}`, false);
+                } else {
+                    window.Spicetify.showNotification("Wiedergabe fehlgeschlagen", true);
+                }
+            } catch (err2) {
+                window.Spicetify.showNotification("Wiedergabe fehlgeschlagen", true);
+            }
         }
     }
 
@@ -1258,6 +1402,9 @@
     // Navigation Listener
     Spicetify.Platform.History.listen((location) => {
         if (location.pathname === "/collection/tracks") {
+            if (isViewActive) {
+                document.body.classList.add('lav-hide-native');
+            }
             activate();
         } else {
             deactivate();
@@ -1266,6 +1413,9 @@
 
     // Initial check
     if (Spicetify.Platform.History.location.pathname === "/collection/tracks") {
+        if (isViewActive) {
+            document.body.classList.add('lav-hide-native');
+        }
         activate();
     }
 
