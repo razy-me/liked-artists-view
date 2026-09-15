@@ -1168,30 +1168,51 @@
         renderVirtualList(); // Re-render to adjust heights
     }
 
-    async function clearQueue() {
+    async function purgeLeftoverTracks(allowedUrisSet) {
+        // 1. Call Platform PlayerAPI.clearQueue
         if (Spicetify.Platform?.PlayerAPI?.clearQueue) {
             try {
                 await Spicetify.Platform.PlayerAPI.clearQueue();
-            } catch (err) {
-                console.warn("LikedArtistsView: clearQueue failed", err);
-            }
+            } catch (err) {}
         }
 
+        // 3. Purge foreign tracks via removeFromQueue
         try {
             if (Spicetify.Queue?.nextTracks && Spicetify.Queue.nextTracks.length > 0) {
-                const tracksToRemove = Spicetify.Queue.nextTracks.map(t => ({
-                    uri: t.uri,
-                    uid: t.uid
-                }));
-                if (typeof Spicetify.removeFromQueue === 'function') {
-                    await Spicetify.removeFromQueue(tracksToRemove);
-                } else if (Spicetify.Platform?.PlayerAPI?.removeFromQueue) {
-                    await Spicetify.Platform.PlayerAPI.removeFromQueue(tracksToRemove);
+                const foreign = allowedUrisSet 
+                    ? Spicetify.Queue.nextTracks.filter(t => t && t.uri && !allowedUrisSet.has(t.uri))
+                    : Spicetify.Queue.nextTracks;
+
+                if (foreign.length > 0) {
+                    const withUid = foreign.filter(t => t.uid).map(t => ({ uri: t.uri, uid: t.uid }));
+                    const urisOnly = foreign.map(t => ({ uri: t.uri }));
+
+                    if (withUid.length > 0) {
+                        if (Spicetify.Platform?.PlayerAPI?.removeFromQueue) {
+                            try { await Spicetify.Platform.PlayerAPI.removeFromQueue(withUid); } catch (e) {}
+                        }
+                        if (typeof Spicetify.removeFromQueue === 'function') {
+                            try { await Spicetify.removeFromQueue(withUid); } catch (e) {}
+                        }
+                    }
+
+                    if (urisOnly.length > 0) {
+                        if (Spicetify.Platform?.PlayerAPI?.removeFromQueue) {
+                            try { await Spicetify.Platform.PlayerAPI.removeFromQueue(urisOnly); } catch (e) {}
+                        }
+                        if (typeof Spicetify.removeFromQueue === 'function') {
+                            try { await Spicetify.removeFromQueue(urisOnly); } catch (e) {}
+                        }
+                    }
                 }
             }
-        } catch (e) {
-            console.warn("LikedArtistsView: removeFromQueue failed", e);
+        } catch (err) {
+            console.warn("LikedArtistsView: purgeLeftoverTracks failed", err);
         }
+    }
+
+    async function clearQueue() {
+        await purgeLeftoverTracks(null);
     }
 
     async function queueTracks(trackUris) {
@@ -1377,10 +1398,11 @@
         }
 
         const shouldShuffle = isShuffleActive();
+        const allowedUris = new Set(uris);
 
         try {
-            // 1. Clear any existing queue from previous artist before switching
-            await clearQueue();
+            // 1. Purge any existing foreign tracks before switching
+            await purgeLeftoverTracks(allowedUris);
 
             // Respect shuffle state from Liked Songs playlist
             const playList = shouldShuffle ? shuffleArray(uris) : [...uris];
@@ -1392,13 +1414,17 @@
             await new Promise(r => setTimeout(r, 120));
             await setPlayerShuffle(shouldShuffle);
 
-            // 4. Clear queue again in case Spotify pre-buffered previous tracks during transition
-            await clearQueue();
-            await new Promise(r => setTimeout(r, 60));
+            // 4. Purge again in case Spotify pre-buffered tracks during transition
+            await purgeLeftoverTracks(allowedUris);
+            await new Promise(r => setTimeout(r, 80));
 
             if (playList.length > 1) {
                 await queueTracks(playList.slice(1, 150));
             }
+
+            // 5. Asynchronous cleanup sweeps to remove stubborn lookahead tracks from previous artist
+            setTimeout(() => purgeLeftoverTracks(allowedUris), 180);
+            setTimeout(() => purgeLeftoverTracks(allowedUris), 500);
 
             const notif = shouldShuffle ? `Spielt: ${artist.name} (Shuffle)` : `Spielt: ${artist.name}`;
             window.Spicetify.showNotification(notif, false);
@@ -1570,19 +1596,24 @@
                 }
             }
 
-            // 1. Clear any existing queue before playing
-            await clearQueue();
+            const allowedUris = new Set(uris);
+
+            // 1. Purge any existing foreign tracks before playing
+            await purgeLeftoverTracks(allowedUris);
 
             await startPlayback(uri);
 
             await new Promise(r => setTimeout(r, 120));
             await setPlayerShuffle(shouldShuffle);
-            await clearQueue();
-            await new Promise(r => setTimeout(r, 60));
+            await purgeLeftoverTracks(allowedUris);
+            await new Promise(r => setTimeout(r, 80));
 
             if (remaining.length > 0) {
                 await queueTracks(remaining);
             }
+
+            setTimeout(() => purgeLeftoverTracks(allowedUris), 180);
+            setTimeout(() => purgeLeftoverTracks(allowedUris), 500);
         } catch (err) {
             console.warn("LikedArtistsView: Play error", err);
             try {
