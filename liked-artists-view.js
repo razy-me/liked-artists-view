@@ -1239,18 +1239,24 @@
         return copy;
     }
 
-    async function enableShuffle() {
-        if (Spicetify.Platform?.PlayerAPI?.setShuffle) {
-            try {
-                await Spicetify.Platform.PlayerAPI.setShuffle(true);
-            } catch (err) {
-                console.warn("LikedArtistsView: PlayerAPI.setShuffle failed", err);
+    function isShuffleActive() {
+        try {
+            if (typeof Spicetify.Player?.getShuffle === 'function' && Spicetify.Player.getShuffle()) {
+                return true;
             }
-        } else if (Spicetify.Player?.setShuffle) {
-            try {
-                Spicetify.Player.setShuffle(true);
-            } catch (err) {}
-        }
+        } catch (e) {}
+
+        try {
+            const shuffleBtn = document.querySelector('.main-actionBar-ActionBarRow [data-testid*="shuffle"], .main-actionBar-ActionBarRow button[aria-label*="Shuffle"], .main-actionBar-ActionBarRow button[aria-label*="Zufall"], [data-testid="control-button-shuffle"]');
+            if (shuffleBtn) {
+                const isChecked = shuffleBtn.getAttribute('aria-checked') === 'true';
+                const isPressed = shuffleBtn.getAttribute('aria-pressed') === 'true';
+                const hasActiveClass = shuffleBtn.classList.contains('active') || shuffleBtn.classList.contains('main-shuffleButton-active');
+                if (isChecked || isPressed || hasActiveClass) return true;
+            }
+        } catch (e) {}
+
+        return false;
     }
 
     async function playArtistSongs(artistUri) {
@@ -1263,25 +1269,25 @@
             return;
         }
 
+        const shouldShuffle = isShuffleActive();
+
         try {
-            // Enable Spotify shuffle mode on player
-            await enableShuffle();
+            // Respect shuffle state from Liked Songs playlist
+            const playList = shouldShuffle ? shuffleArray(uris) : [...uris];
 
-            // Shuffle artist tracks
-            const shuffled = shuffleArray(uris);
+            // 1. Play first track standalone
+            await startPlayback(playList[0]);
 
-            // 1. Play first shuffled track standalone
-            await startPlayback(shuffled[0]);
-
-            // 2. Clear old queue and add remaining shuffled tracks
+            // 2. Clear old queue and add remaining tracks
             await new Promise(r => setTimeout(r, 100));
             await clearQueue();
 
-            if (shuffled.length > 1) {
-                await queueTracks(shuffled.slice(1, 150));
+            if (playList.length > 1) {
+                await queueTracks(playList.slice(1, 150));
             }
 
-            window.Spicetify.showNotification(`Spielt: ${artist.name} (Shuffle)`, false);
+            const notif = shouldShuffle ? `Spielt: ${artist.name} (Shuffle)` : `Spielt: ${artist.name}`;
+            window.Spicetify.showNotification(notif, false);
         } catch (err) {
             console.error("LikedArtistsView: Artist playback failed", err);
             try {
@@ -1437,8 +1443,8 @@
                     const uris = artist.songs
                         .map(s => s.track?.uri || s.uri)
                         .filter(u => u && !u.startsWith('spotify:local:'));
-                    const isShuffle = !!(Spicetify.Player?.getShuffle && Spicetify.Player.getShuffle());
-                    if (isShuffle) {
+                    const shouldShuffle = isShuffleActive();
+                    if (shouldShuffle) {
                         const otherTracks = uris.filter(u => u !== uri);
                         remaining = shuffleArray(otherTracks).slice(0, 150);
                     } else {
