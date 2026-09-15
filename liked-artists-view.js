@@ -1128,6 +1128,70 @@
         renderVirtualList(); // Re-render to adjust heights
     }
 
+    async function clearQueue() {
+        if (Spicetify.Platform?.PlayerAPI?.clearQueue) {
+            try {
+                await Spicetify.Platform.PlayerAPI.clearQueue();
+            } catch (err) {
+                console.warn("LikedArtistsView: clearQueue failed", err);
+            }
+        }
+    }
+
+    async function queueTracks(trackUris) {
+        if (!trackUris || trackUris.length === 0) return;
+        const items = trackUris.map(uri => ({ uri }));
+
+        if (typeof Spicetify.addToQueue === 'function') {
+            try {
+                for (let i = 0; i < items.length; i += 40) {
+                    const chunk = items.slice(i, i + 40);
+                    await Spicetify.addToQueue(chunk);
+                    if (items.length > 40) {
+                        await new Promise(r => setTimeout(r, 30));
+                    }
+                }
+                return;
+            } catch (e) {
+                console.warn("LikedArtistsView: Spicetify.addToQueue failed, falling back to PlayerAPI", e);
+            }
+        }
+
+        if (Spicetify.Platform?.PlayerAPI?.addToQueue) {
+            try {
+                for (let i = 0; i < items.length; i += 40) {
+                    const chunk = items.slice(i, i + 40);
+                    await Spicetify.Platform.PlayerAPI.addToQueue(chunk);
+                    if (items.length > 40) {
+                        await new Promise(r => setTimeout(r, 30));
+                    }
+                }
+            } catch (e2) {
+                console.error("LikedArtistsView: PlayerAPI.addToQueue failed", e2);
+            }
+        }
+    }
+
+    async function startPlayback(uri) {
+        if (Spicetify.Platform?.PlayerAPI?.play) {
+            try {
+                await Spicetify.Platform.PlayerAPI.play(
+                    { uri },
+                    {},
+                    {}
+                );
+                return;
+            } catch (e) {
+                console.warn("LikedArtistsView: PlayerAPI.play failed, falling back to Player.playUri", e);
+            }
+        }
+        if (Spicetify.Player?.playUri) {
+            await Spicetify.Player.playUri(uri);
+        } else if (Spicetify.Player?.play) {
+            await Spicetify.Player.play(uri);
+        }
+    }
+
     async function playArtistSongs(artistUri) {
         const artist = cachedArtists.find(a => a.uri === artistUri);
         if (!artist || !artist.songs || !artist.songs.length) return;
@@ -1139,33 +1203,15 @@
         }
 
         try {
-            // 1. Play the first track immediately through local player
-            if (Spicetify.Platform?.PlayerAPI?.play) {
-                await Spicetify.Platform.PlayerAPI.play(
-                    { uri: uris[0] },
-                    { uri: "spotify:collection:tracks" },
-                    {}
-                );
-            } else if (Spicetify.Player?.playUri) {
-                await Spicetify.Player.playUri(uris[0]);
-            } else if (Spicetify.Player?.play) {
-                await Spicetify.Player.play(uris[0]);
-            }
+            // 1. Play first track standalone (empty context prevents Spotify from loading the 5000+ liked songs playlist)
+            await startPlayback(uris[0]);
 
-            // 2. Queue remaining tracks of this artist so playback continues seamlessly
+            // 2. Clear old queue and add remaining tracks from this artist
+            await new Promise(r => setTimeout(r, 100));
+            await clearQueue();
+
             if (uris.length > 1) {
-                const remaining = uris.slice(1, 80).map(uri => ({ uri }));
-                if (Spicetify.Platform?.PlayerAPI?.addToQueue) {
-                    try {
-                        await Spicetify.Platform.PlayerAPI.addToQueue(remaining);
-                    } catch (qe) {
-                        if (Spicetify.addToQueue) {
-                            remaining.forEach(item => Spicetify.addToQueue(item));
-                        }
-                    }
-                } else if (Spicetify.addToQueue) {
-                    remaining.forEach(item => Spicetify.addToQueue(item));
-                }
+                await queueTracks(uris.slice(1, 150));
             }
 
             window.Spicetify.showNotification(`Spielt: ${artist.name}`, false);
@@ -1261,7 +1307,7 @@
                 row.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const uri = row.dataset.songUri;
-                    playTrack(uri);
+                    playTrack(uri, artist.uri);
                 });
             });
         }
@@ -1314,32 +1360,36 @@
         contentContainer.appendChild(fragment);
     }
 
-    function playTrack(uri) {
+    async function playTrack(uri, artistUri) {
         if (!uri) return;
         try {
-            if (Spicetify.Platform?.PlayerAPI?.play) {
-                Spicetify.Platform.PlayerAPI.play(
-                    { uri: uri },
-                    { uri: "spotify:collection:tracks" },
-                    {}
-                ).catch(e => {
-                    console.warn("LikedArtistsView: PlayerAPI.play failed, trying Spicetify.Player.playUri", e);
-                    if (Spicetify.Player.playUri) {
-                        Spicetify.Player.playUri(uri);
-                    } else {
-                        Spicetify.Player.play(uri);
+            let remaining = [];
+            if (artistUri) {
+                const artist = cachedArtists.find(a => a.uri === artistUri);
+                if (artist && artist.songs) {
+                    const uris = artist.songs
+                        .map(s => s.track?.uri || s.uri)
+                        .filter(u => u && !u.startsWith('spotify:local:'));
+                    const idx = uris.indexOf(uri);
+                    if (idx !== -1 && idx < uris.length - 1) {
+                        remaining = uris.slice(idx + 1, idx + 150);
                     }
-                });
-            } else if (Spicetify.Player.playUri) {
-                Spicetify.Player.playUri(uri);
-            } else {
-                Spicetify.Player.play(uri);
+                }
+            }
+
+            await startPlayback(uri);
+
+            await new Promise(r => setTimeout(r, 100));
+            await clearQueue();
+
+            if (remaining.length > 0) {
+                await queueTracks(remaining);
             }
         } catch (err) {
             console.warn("LikedArtistsView: Play error", err);
             try {
-                if (Spicetify.Player.playUri) Spicetify.Player.playUri(uri);
-                else Spicetify.Player.play(uri);
+                if (Spicetify.Player?.playUri) await Spicetify.Player.playUri(uri);
+                else if (Spicetify.Player?.play) await Spicetify.Player.play(uri);
             } catch (e2) {
                 console.error("LikedArtistsView: Playback failed", e2);
             }
