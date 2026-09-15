@@ -213,7 +213,7 @@
         .lav-songs-list {
             display: flex;
             flex-direction: column;
-            padding: 8px 16px 16px 64px;
+            padding: 8px 16px 16px 16px;
         }
 
         /* Song Row */
@@ -221,7 +221,7 @@
             display: flex;
             align-items: center;
             height: 56px;
-            padding: 0 16px;
+            padding: 0 4px;
             border-radius: 4px;
             cursor: pointer;
             transition: background-color 0.2s;
@@ -231,19 +231,21 @@
         }
 
         .lav-song-num {
-            width: 32px;
+            width: 22px;
             color: var(--text-subdued, #a7a7a7);
             font-size: 0.875rem;
-            text-align: right;
-            margin-right: 16px;
+            text-align: center;
+            margin-right: 10px;
+            flex-shrink: 0;
         }
 
         .lav-song-cover {
             width: 40px;
             height: 40px;
             border-radius: 4px;
-            margin-right: 16px;
+            margin-right: 14px;
             object-fit: cover;
+            flex-shrink: 0;
         }
 
         .lav-song-details {
@@ -1239,20 +1241,77 @@
         return copy;
     }
 
+    function isElementGreen(el) {
+        if (!el) return false;
+        const elements = [el, ...el.querySelectorAll('*')];
+        for (const elem of elements) {
+            const computed = window.getComputedStyle(elem);
+            const col = computed.color || '';
+            const fill = computed.fill || '';
+            for (const val of [col, fill]) {
+                const m = val.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+                if (m) {
+                    const r = parseInt(m[1], 10), g = parseInt(m[2], 10), b = parseInt(m[3], 10);
+                    // Spotify bright accent green: rgb(29, 185, 84) or rgb(30, 215, 96)
+                    if (g > 130 && g > r * 1.3 && g > b * 1.3) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     function isShuffleActive() {
+        // 1. Spicetify Player API
         try {
             if (typeof Spicetify.Player?.getShuffle === 'function' && Spicetify.Player.getShuffle()) {
                 return true;
             }
+            const state = Spicetify.Platform?.PlayerAPI?.getState?.();
+            if (state?.options?.shuffle) {
+                return true;
+            }
         } catch (e) {}
 
+        // 2. Playlist Action Bar button check
         try {
-            const shuffleBtn = document.querySelector('.main-actionBar-ActionBarRow [data-testid*="shuffle"], .main-actionBar-ActionBarRow button[aria-label*="Shuffle"], .main-actionBar-ActionBarRow button[aria-label*="Zufall"], [data-testid="control-button-shuffle"]');
-            if (shuffleBtn) {
-                const isChecked = shuffleBtn.getAttribute('aria-checked') === 'true';
-                const isPressed = shuffleBtn.getAttribute('aria-pressed') === 'true';
-                const hasActiveClass = shuffleBtn.classList.contains('active') || shuffleBtn.classList.contains('main-shuffleButton-active');
-                if (isChecked || isPressed || hasActiveClass) return true;
+            const actionBar = document.querySelector('.main-actionBar-ActionBarRow') || 
+                              document.querySelector('[data-testid="action-bar-row"]') || 
+                              document.querySelector('.main-actionBar-ActionBar');
+            if (actionBar) {
+                const buttons = Array.from(actionBar.querySelectorAll('button'));
+                for (const btn of buttons) {
+                    if (btn.classList.contains('lav-toggle-btn')) continue;
+
+                    // Skip the large primary play button
+                    const isPrimaryPlay = (btn.getAttribute('data-testid') || '').includes('play') ||
+                                          btn.getAttribute('data-encore-id') === 'buttonPrimary' ||
+                                          btn.querySelector('svg path[d*="M8 5v14l11-7z"]');
+                    if (isPrimaryPlay) continue;
+
+                    const label = (btn.getAttribute('aria-label') || btn.getAttribute('title') || '').toLowerCase();
+                    const testId = (btn.getAttribute('data-testid') || '').toLowerCase();
+                    const isShuffleBtn = label.includes('shuffle') || label.includes('zufall') || testId.includes('shuffle');
+
+                    // Standard ARIA attributes
+                    const checked = btn.getAttribute('aria-checked');
+                    if (checked === 'true' || checked === 'mixed') return true;
+
+                    if (label.includes('deaktivieren') || label.includes('disable') || label.includes('turn off')) {
+                        return true;
+                    }
+
+                    // Green icon check
+                    if (isShuffleBtn && isElementGreen(btn)) {
+                        return true;
+                    }
+
+                    // Any green button in action bar (aside from primary play and our toggle)
+                    if (isElementGreen(btn)) {
+                        return true;
+                    }
+                }
             }
         } catch (e) {}
 
@@ -1272,6 +1331,19 @@
         const shouldShuffle = isShuffleActive();
 
         try {
+            // Synchronize player shuffle mode with playlist shuffle state
+            if (shouldShuffle) {
+                if (Spicetify.Platform?.PlayerAPI?.setShuffle) {
+                    try {
+                        await Spicetify.Platform.PlayerAPI.setShuffle(true);
+                    } catch (err) {}
+                } else if (Spicetify.Player?.setShuffle) {
+                    try {
+                        Spicetify.Player.setShuffle(true);
+                    } catch (err) {}
+                }
+            }
+
             // Respect shuffle state from Liked Songs playlist
             const playList = shouldShuffle ? shuffleArray(uris) : [...uris];
 
@@ -1445,6 +1517,15 @@
                         .filter(u => u && !u.startsWith('spotify:local:'));
                     const shouldShuffle = isShuffleActive();
                     if (shouldShuffle) {
+                        if (Spicetify.Platform?.PlayerAPI?.setShuffle) {
+                            try {
+                                await Spicetify.Platform.PlayerAPI.setShuffle(true);
+                            } catch (err) {}
+                        } else if (Spicetify.Player?.setShuffle) {
+                            try {
+                                Spicetify.Player.setShuffle(true);
+                            } catch (err) {}
+                        }
                         const otherTracks = uris.filter(u => u !== uri);
                         remaining = shuffleArray(otherTracks).slice(0, 150);
                     } else {
