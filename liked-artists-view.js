@@ -1577,13 +1577,15 @@
         if (!uri) return;
         try {
             let remaining = [];
+            let uris = [];
+            let shouldShuffle = false;
             if (artistUri) {
                 const artist = cachedArtists.find(a => a.uri === artistUri);
                 if (artist && artist.songs) {
-                    const uris = artist.songs
+                    uris = artist.songs
                         .map(s => s.track?.uri || s.uri)
                         .filter(u => u && !u.startsWith('spotify:local:'));
-                    const shouldShuffle = isShuffleActive();
+                    shouldShuffle = isShuffleActive();
                     if (shouldShuffle) {
                         const otherTracks = uris.filter(u => u !== uri);
                         remaining = shuffleArray(otherTracks).slice(0, 150);
@@ -1596,7 +1598,7 @@
                 }
             }
 
-            const allowedUris = new Set(uris);
+            const allowedUris = new Set(uris.length > 0 ? uris : [uri]);
 
             // 1. Purge any existing foreign tracks before playing
             await purgeLeftoverTracks(allowedUris);
