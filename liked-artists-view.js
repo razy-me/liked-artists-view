@@ -319,8 +319,12 @@
             }
         }
 
-        .lav-hide-native .main-trackList-trackListHeader,
-        .lav-hide-native .main-trackList-trackList {
+        .lav-hide-native main section[data-testid="playlist-page"] .main-trackList-trackListHeader,
+        .lav-hide-native main section[data-testid="playlist-page"] .main-trackList-trackList,
+        .lav-hide-native main section[data-testid="playlist-page"] [role="grid"],
+        .lav-hide-native main section[data-testid="playlist-page"] [data-testid="playlist-tracklist"],
+        .lav-hide-native main section[data-testid="playlist-page"] .contentSpacing > div > [role="grid"],
+        .lav-hide-native .main-view-container main [role="grid"]:not([aria-label*="Bibliothek"]):not([aria-label*="Library"]) {
             display: none !important;
         }
 
@@ -472,10 +476,10 @@
         updateToggleButtonState();
 
         if (!actionBar.contains(toggleButton)) {
-            const filterBtn = actionBar.querySelector('.x-filterBox-expandButton') || actionBar.querySelector('.x-filterBox-filterInput');
+            const filterBtn = actionBar.querySelector('.x-filterBox-expandButton, .x-filterBox-filterInput, [data-testid*="filter"], input[role="searchbox"]');
+            const sortOrEndContainer = actionBar.querySelector('.Nk2TmighfGtLaZ92ekJT, .VODO2ZNW28D7DIjJnbAm, [data-testid*="sort"], [class*="sortBox"], [class*="Sort"]');
+            
             if (filterBtn) {
-                // Find the search box root container inside the action bar / trailing controls
-                // so toggleButton is inserted as a true sibling OUTSIDE the search box's tooltip container
                 let searchContainer = filterBtn;
                 while (
                     searchContainer.parentElement &&
@@ -491,6 +495,8 @@
                 } else {
                     actionBar.appendChild(toggleButton);
                 }
+            } else if (sortOrEndContainer && sortOrEndContainer.parentElement === actionBar) {
+                actionBar.insertBefore(toggleButton, sortOrEndContainer);
             } else {
                 actionBar.appendChild(toggleButton);
             }
@@ -513,14 +519,24 @@
 
         createOrUpdateToggleButton();
 
-        const scrollNode = document.querySelector('.main-view-container__scroll-node [data-overlayscrollbars-viewport]') || document.querySelector('.main-view-container__scroll-node');
+        // Scope strictly to main view / playlist page (never match sidebar or library elements)
+        const mainContainer = document.querySelector('.main-view-container main') ||
+                              document.querySelector('main') ||
+                              document.querySelector('.main-view-container');
 
-        if (!scrollNode) {
+        if (!mainContainer) {
             scheduleActivateRetry();
             return;
         }
 
-        const trackList = scrollNode.querySelector('.main-trackList-trackList') || document.querySelector('.main-trackList-trackList');
+        const playlistPage = mainContainer.querySelector('section[data-testid="playlist-page"]') || 
+                             mainContainer.querySelector('section[role="presentation"]') || 
+                             mainContainer;
+
+        const trackList = playlistPage.querySelector('.main-trackList-trackList') ||
+                          playlistPage.querySelector('[data-testid="playlist-tracklist"]') ||
+                          playlistPage.querySelector('[role="grid"]:not([aria-label*="Bibliothek"]):not([aria-label*="Library"])');
+
         if (!trackList) {
              scheduleActivateRetry();
              return;
@@ -544,6 +560,11 @@
 
         initDOMObserver();
         createOrUpdateToggleButton();
+
+        // If we already have cached data, immediately mount the virtual list
+        if (cachedArtists && cachedArtists.length > 0) {
+            updateUI();
+        }
 
         loadData().then(() => {
             if (isActive) {
@@ -601,6 +622,8 @@
         if (customViewContainer && customViewContainer.parentElement) {
             customViewContainer.parentElement.removeChild(customViewContainer);
         }
+        scrollContainer = null;
+        contentContainer = null;
     }
 
     function renderLoadingView(loaded, total) {
@@ -1387,7 +1410,7 @@
         }, 120);
     }
 
-    async function playArtistSongs(artistUri) {
+    async function playArtistSongs(artistUri, startUri = null) {
         const artist = cachedArtists.find(a => a.uri === artistUri);
         if (!artist || !artist.songs || !artist.songs.length) return;
 
@@ -1401,30 +1424,43 @@
         const allowedUris = new Set(uris);
 
         try {
-            // 1. Purge any existing foreign tracks before switching
+            // 1. Purge foreign tracks before switching
             await purgeLeftoverTracks(allowedUris);
 
-            // Respect shuffle state from Liked Songs playlist
-            const playList = shouldShuffle ? shuffleArray(uris) : [...uris];
+            let firstTrack = uris[0];
+            let queueList = [];
+
+            if (startUri && uris.includes(startUri)) {
+                firstTrack = startUri;
+                if (shouldShuffle) {
+                    const remaining = uris.filter(u => u !== startUri);
+                    queueList = shuffleArray(remaining);
+                } else {
+                    const idx = uris.indexOf(startUri);
+                    queueList = uris.slice(idx + 1);
+                }
+            } else {
+                if (shouldShuffle) {
+                    const shuffled = shuffleArray(uris);
+                    firstTrack = shuffled[0];
+                    queueList = shuffled.slice(1);
+                } else {
+                    firstTrack = uris[0];
+                    queueList = uris.slice(1);
+                }
+            }
 
             // 2. Play first track standalone
-            await startPlayback(playList[0]);
+            await startPlayback(firstTrack);
 
-            // 3. Synchronize player shuffle mode AFTER track starts so Spotify doesn't reset it
+            // 3. Synchronize player shuffle mode
             await new Promise(r => setTimeout(r, 120));
             await setPlayerShuffle(shouldShuffle);
 
-            // 4. Purge again in case Spotify pre-buffered tracks during transition
-            await purgeLeftoverTracks(allowedUris);
-            await new Promise(r => setTimeout(r, 80));
-
-            if (playList.length > 1) {
-                await queueTracks(playList.slice(1, 150));
+            // 4. Fill the queue with remaining artist songs
+            if (queueList.length > 0) {
+                await queueTracks(queueList.slice(0, 150));
             }
-
-            // 5. Asynchronous cleanup sweeps to remove stubborn lookahead tracks from previous artist
-            setTimeout(() => purgeLeftoverTracks(allowedUris), 180);
-            setTimeout(() => purgeLeftoverTracks(allowedUris), 500);
 
             const notif = shouldShuffle ? `Spielt: ${artist.name} (Shuffle)` : `Spielt: ${artist.name}`;
             window.Spicetify.showNotification(notif, false);
@@ -1432,7 +1468,7 @@
             console.error("LikedArtistsView: Artist playback failed", err);
             try {
                 if (Spicetify.Player?.playUri) {
-                    await Spicetify.Player.playUri(uris[0]);
+                    await Spicetify.Player.playUri(startUri || uris[0]);
                     window.Spicetify.showNotification(`Spielt: ${artist.name}`, false);
                 } else {
                     window.Spicetify.showNotification("Wiedergabe fehlgeschlagen", true);
@@ -1575,55 +1611,10 @@
 
     async function playTrack(uri, artistUri) {
         if (!uri) return;
-        try {
-            let remaining = [];
-            let uris = [];
-            let shouldShuffle = false;
-            if (artistUri) {
-                const artist = cachedArtists.find(a => a.uri === artistUri);
-                if (artist && artist.songs) {
-                    uris = artist.songs
-                        .map(s => s.track?.uri || s.uri)
-                        .filter(u => u && !u.startsWith('spotify:local:'));
-                    shouldShuffle = isShuffleActive();
-                    if (shouldShuffle) {
-                        const otherTracks = uris.filter(u => u !== uri);
-                        remaining = shuffleArray(otherTracks).slice(0, 150);
-                    } else {
-                        const idx = uris.indexOf(uri);
-                        if (idx !== -1 && idx < uris.length - 1) {
-                            remaining = uris.slice(idx + 1, idx + 150);
-                        }
-                    }
-                }
-            }
-
-            const allowedUris = new Set(uris.length > 0 ? uris : [uri]);
-
-            // 1. Purge any existing foreign tracks before playing
-            await purgeLeftoverTracks(allowedUris);
-
+        if (artistUri) {
+            await playArtistSongs(artistUri, uri);
+        } else {
             await startPlayback(uri);
-
-            await new Promise(r => setTimeout(r, 120));
-            await setPlayerShuffle(shouldShuffle);
-            await purgeLeftoverTracks(allowedUris);
-            await new Promise(r => setTimeout(r, 80));
-
-            if (remaining.length > 0) {
-                await queueTracks(remaining);
-            }
-
-            setTimeout(() => purgeLeftoverTracks(allowedUris), 180);
-            setTimeout(() => purgeLeftoverTracks(allowedUris), 500);
-        } catch (err) {
-            console.warn("LikedArtistsView: Play error", err);
-            try {
-                if (Spicetify.Player?.playUri) await Spicetify.Player.playUri(uri);
-                else if (Spicetify.Player?.play) await Spicetify.Player.play(uri);
-            } catch (e2) {
-                console.error("LikedArtistsView: Playback failed", e2);
-            }
         }
     }
 
