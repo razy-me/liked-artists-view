@@ -611,7 +611,7 @@
 
     // --- INDEXEDDB: LikedGenresDB ---
     const DB_NAME = "LikedGenresDB";
-    const DB_VERSION = 2;
+    const DB_VERSION = 3;
     let genreDb = null;
 
     async function initGenreDB() {
@@ -865,8 +865,8 @@
 
         // 1. Wikipedia DE (Präzise für Herkunft Deutschland/Österreich/Schweiz & deutsche Genres)
         try {
-            const deUrl = `https://de.wikipedia.org/w/api.php?action=query&prop=revisions&titles=${encodeURIComponent(cleanName)}&rvprop=content&rvsection=0&format=json&redirects=1`;
-            const resp = await fetchWithTimeout(fetch(deUrl, { headers: { 'User-Agent': 'SpicetifyGenreClassifier/2.0' } }), 3500);
+            const deUrl = `https://de.wikipedia.org/w/api.php?action=query&prop=revisions&titles=${encodeURIComponent(cleanName)}&rvprop=content&rvsection=0&format=json&redirects=1&origin=*`;
+            const resp = await fetchWithTimeout(fetch(deUrl), 3500);
             if (resp && resp.ok) {
                 const data = await resp.json();
                 const page = Object.values(data.query?.pages || {})[0];
@@ -884,8 +884,8 @@
 
         // 2. Wikipedia EN (Exzellent für internationale Subgenres: Nu Metal, Metalcore, Gothic, Techno, etc.)
         try {
-            const enUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles=${encodeURIComponent(cleanName)}&rvprop=content&rvsection=0&format=json&redirects=1`;
-            const resp = await fetchWithTimeout(fetch(enUrl, { headers: { 'User-Agent': 'SpicetifyGenreClassifier/2.0' } }), 3500);
+            const enUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles=${encodeURIComponent(cleanName)}&rvprop=content&rvsection=0&format=json&redirects=1&origin=*`;
+            const resp = await fetchWithTimeout(fetch(enUrl), 3500);
             if (resp && resp.ok) {
                 const data = await resp.json();
                 const page = Object.values(data.query?.pages || {})[0];
@@ -902,8 +902,8 @@
         // 3. Fallback: Wikipedia DE Volltext-Snippet
         if (!genreSnippet || genreSnippet.trim().length < 4) {
             try {
-                const sUrl = `https://de.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanName)}&format=json`;
-                const resp = await fetchWithTimeout(fetch(sUrl, { headers: { 'User-Agent': 'SpicetifyGenreClassifier/2.0' } }), 3500);
+                const sUrl = `https://de.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanName)}&format=json&origin=*`;
+                const resp = await fetchWithTimeout(fetch(sUrl), 3500);
                 if (resp && resp.ok) {
                     const data = await resp.json();
                     const snips = (data.query?.search || []).map(s => s.snippet).join(' ');
