@@ -421,10 +421,13 @@
         }
     }
 
-    function toggleArtistView() {
-        isViewActive = !isViewActive;
+    function setArtistViewActive(active, silent = false) {
+        if (isViewActive === active) return;
+        isViewActive = active;
         localStorage.setItem('lav:view-active', isViewActive.toString());
         updateToggleButtonState();
+
+        window.dispatchEvent(new CustomEvent('lav:view-changed', { detail: { isArtistViewActive: isViewActive } }));
 
         if (isViewActive) {
             document.body.classList.add('lav-hide-native');
@@ -434,15 +437,29 @@
             } else {
                 activate();
             }
-            window.Spicetify.showNotification("Künstleransicht aktiviert", false);
+            if (!silent) window.Spicetify.showNotification("Künstleransicht aktiviert", false);
         } else {
-            document.body.classList.remove('lav-hide-native');
+            if (!document.body.classList.contains('lgt-active')) {
+                document.body.classList.remove('lav-hide-native');
+            }
             if (customViewContainer) {
                 customViewContainer.style.display = 'none';
             }
-            window.Spicetify.showNotification("Standard-Songliste aktiviert", false);
+            if (!silent) window.Spicetify.showNotification("Standard-Songliste aktiviert", false);
         }
     }
+
+    function toggleArtistView() {
+        setArtistViewActive(!isViewActive, false);
+    }
+
+    window.addEventListener('lgt:view-changed', (e) => {
+        if (e.detail && e.detail.isGenreViewActive) {
+            if (isViewActive) {
+                setArtistViewActive(false, true);
+            }
+        }
+    });
 
     function createOrUpdateToggleButton() {
         if (Spicetify.Platform.History.location.pathname !== "/collection/tracks") {
@@ -617,7 +634,9 @@
             toggleButton.parentElement.removeChild(toggleButton);
         }
 
-        document.body.classList.remove('lav-hide-native');
+        if (!document.body.classList.contains('lgt-active')) {
+            document.body.classList.remove('lav-hide-native');
+        }
 
         if (customViewContainer && customViewContainer.parentElement) {
             customViewContainer.parentElement.removeChild(customViewContainer);
@@ -714,6 +733,9 @@
     }
 
     async function getAllTracksFromDB() {
+        if (!db) {
+            try { await initDB(); } catch(e) {}
+        }
         return new Promise((resolve, reject) => {
             if (!db) return resolve([]);
             const transaction = db.transaction(["tracks"], "readonly");
@@ -772,6 +794,7 @@
                             name: t.track.name,
                             artistName: t.track.artists[0]?.name || "Unknown",
                             artistUri: t.track.artists[0]?.uri || "",
+                            artists: (t.track.artists || []).map(a => ({ name: a?.name || "", uri: a?.uri || "" })),
                             albumName: t.track.album?.name || "",
                             albumUri: t.track.album?.uri || "",
                             albumImage: t.track.album?.images?.[0]?.url || t.track.album?.images?.[1]?.url || "",
@@ -1682,6 +1705,17 @@
             deactivate();
         }
     });
+
+    // Expose public API for companion extensions (e.g. Liked Genres Tierlist)
+    window.LikedArtistsView = {
+        isViewActive: () => isViewActive,
+        setArtistViewActive,
+        toggleArtistView,
+        getAllTracksFromDB,
+        loadData,
+        getContainer: () => customViewContainer,
+        getToggleButton: () => toggleButton
+    };
 
     // Initial check
     if (Spicetify.Platform.History.location.pathname === "/collection/tracks") {
