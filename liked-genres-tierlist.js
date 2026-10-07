@@ -789,16 +789,14 @@
             return cachedMap;
         }
 
-        // INITIAL PHASE: Schneller paralleler Abruf der Top 200 Künstler
-        const INITIAL_LIMIT = Math.min(200, missing.length);
-        const initialBatch = missing.slice(0, INITIAL_LIMIT);
-        const PARALLEL_CONCURRENCY = 6;
+        // Scan aller fehlenden Künstler mit hoher Parallelität (iTunes API ist extrem schnell)
+        const PARALLEL_CONCURRENCY = 8;
         let newFetched = [];
 
-        for (let i = 0; i < initialBatch.length; i += PARALLEL_CONCURRENCY) {
-            const slice = initialBatch.slice(i, i + PARALLEL_CONCURRENCY);
+        for (let i = 0; i < missing.length; i += PARALLEL_CONCURRENCY) {
+            const slice = missing.slice(i, i + PARALLEL_CONCURRENCY);
             if (onProgress) {
-                onProgress(i, initialBatch.length, "");
+                onProgress(i, missing.length, "");
             }
 
             const promises = slice.map(async (info) => {
@@ -822,16 +820,17 @@
                 console.warn("[LikedGenresTierlist] Batch error:", e);
             }
 
-            if (newFetched.length >= 25) {
+            if (newFetched.length >= 40) {
                 await saveArtistGenresBatchToDB(newFetched);
                 newFetched = [];
             }
 
             if (onProgress) {
-                onProgress(Math.min(i + PARALLEL_CONCURRENCY, initialBatch.length), initialBatch.length, "");
+                onProgress(Math.min(i + PARALLEL_CONCURRENCY, missing.length), missing.length, "");
             }
 
-            await new Promise(r => setTimeout(r, 60));
+            // Kurze Pause zur Schonung der Verbindung
+            await new Promise(r => setTimeout(r, 40));
         }
 
         if (newFetched.length > 0) {
@@ -839,48 +838,7 @@
             newFetched = [];
         }
 
-        // BACKGROUND PHASE: Hintergrund-Scan für alle verbleibenden Künstler
-        const remaining = missing.slice(INITIAL_LIMIT);
-        if (remaining.length > 0 && !isBackgroundScanning) {
-            isBackgroundScanning = true;
-            (async () => {
-                console.log(`[LikedGenresTierlist] Starte Hintergrund-Scan für verbleibende ${remaining.length} Künstler...`);
-                let bgFetched = [];
-                for (let j = 0; j < remaining.length; j += PARALLEL_CONCURRENCY) {
-                    const slice = remaining.slice(j, j + PARALLEL_CONCURRENCY);
-                    const promises = slice.map(async (info) => {
-                        let genres = await fetchGenreFromITunes(info.name);
-                        return {
-                            id: info.id,
-                            name: info.name,
-                            genres: genres,
-                            images: []
-                        };
-                    });
-
-                    try {
-                        const results = await Promise.all(promises);
-                        results.forEach(entry => {
-                            bgFetched.push(entry);
-                            cachedMap.set(entry.id, { ...entry, updatedAt: Date.now() });
-                        });
-                    } catch(_) {}
-
-                    if (bgFetched.length >= 50) {
-                        await saveArtistGenresBatchToDB(bgFetched);
-                        bgFetched = [];
-                    }
-                    await new Promise(r => setTimeout(r, 150));
-                }
-                if (bgFetched.length > 0) {
-                    await saveArtistGenresBatchToDB(bgFetched);
-                }
-                isBackgroundScanning = false;
-                console.log("[LikedGenresTierlist] Hintergrund-Scan komplett abgeschlossen!");
-            })();
-        }
-
-        if (onProgress) onProgress(initialBatch.length, initialBatch.length, "");
+        if (onProgress) onProgress(missing.length, missing.length, "");
         return cachedMap;
     }
 
