@@ -717,12 +717,18 @@
     }
 
     async function clearGenreDB() {
-        if (!genreDb) return;
-        try {
-            const tx = genreDb.transaction(["artist_genres", "meta"], "readwrite");
-            tx.objectStore("artist_genres").clear();
-            tx.objectStore("meta").clear();
-        } catch(e) {}
+        return new Promise((resolve) => {
+            if (!genreDb) return resolve();
+            try {
+                const tx = genreDb.transaction(["artist_genres", "meta"], "readwrite");
+                tx.objectStore("artist_genres").clear();
+                tx.objectStore("meta").clear();
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => resolve();
+            } catch(e) {
+                resolve();
+            }
+        });
     }
 
     // --- SPOTIFY GENRE FETCHER ---
@@ -942,8 +948,8 @@
         return [];
     }
 
-    async function fetchGenresForArtists(artistsInfoList, onProgress) {
-        const cachedList = await getAllArtistGenresFromDB();
+    async function fetchGenresForArtists(artistsInfoList, onProgress, forceRefresh = false) {
+        const cachedList = forceRefresh ? [] : await getAllArtistGenresFromDB();
         const cachedMap = new Map(cachedList.map(a => [a.id, a]));
 
         const now = Date.now();
@@ -952,7 +958,7 @@
         const missing = [];
         artistsInfoList.forEach(info => {
             const cached = cachedMap.get(info.id);
-            if (!cached || !cached.updatedAt || (now - cached.updatedAt > TTL_MS) || (!cached.genres || cached.genres.length === 0)) {
+            if (forceRefresh || !cached || !cached.updatedAt || (now - cached.updatedAt > TTL_MS) || (!cached.genres || cached.genres.length === 0)) {
                 missing.push(info);
             }
         });
@@ -1638,13 +1644,13 @@
             // Sortiere Künstler absteigend nach Anzahl ihrer Songs in der Playlist
             const artistsInfoList = Array.from(artistMap.values()).sort((a, b) => b.count - a.count);
 
-            // 4. Genres abrufen & cachen (Apple Music + DB)
+            // 4. Genres abrufen & cachen (Apple Music + Deezer + DB)
             renderLoadingView(`Lade Künstler-Genres (${artistsInfoList.length} Künstler)...`, 0);
             const artistGenresMap = await fetchGenresForArtists(artistsInfoList, (cur, tot, statusMsg) => {
                 const pct = tot > 0 ? Math.round((cur / tot) * 100) : 0;
                 const statusSuffix = statusMsg ? ` · ${statusMsg}` : "";
                 renderLoadingView(`Analysiere Künstler (${cur.toLocaleString()} / ${tot.toLocaleString()})${statusSuffix}`, pct);
-            });
+            }, forceRefresh);
 
             // 5. Daten aggregieren
             genreMap = processGenreData(allTracks, artistGenresMap);
