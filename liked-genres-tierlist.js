@@ -763,45 +763,96 @@
     function classifyArtistSubgenre(text, isGerman) {
         const t = text.toLowerCase();
         
-        // 1. Electronic & Club Subgenres
-        if (/\b(schranz|hardtechno|hard techno)\b/.test(t)) return ['Schranz'];
-        if (/\b(techno|minimal techno|acid techno|peak time techno|hard dance)\b/.test(t)) return ['Techno'];
-        if (/\b(tech house|deep house|house music|house)\b/.test(t)) return ['House'];
-        if (/\b(psytrance|goa|trance)\b/.test(t)) return ['Trance / Psytrance'];
-        if (/\b(drum and bass|drum & bass|dnb|jungle)\b/.test(t)) return ['Drum & Bass'];
-        if (/\b(dubstep|brostep|bass music)\b/.test(t)) return ['Dubstep / Bass'];
+        // 1. SCHRANZ & HARD ELECTRONIC / TECHNO
+        if (/\b(schranz)\b/.test(t)) return ['Schranz'];
+        if (/\b(hardtechno|hard techno)\b/.test(t)) return ['Hardtechno'];
+        if (/\b(acid techno|acid)\b/.test(t)) return ['Acid Techno'];
+        if (/\b(minimal techno|minimal)\b/.test(t)) return ['Minimal Techno'];
+        if (/\b(industrial techno)\b/.test(t)) return ['Industrial Techno'];
+        if (/\b(melodic techno|peak time techno)\b/.test(t)) return ['Melodic Techno'];
+        if (/\b(techno|hard dance)\b/.test(t)) return ['Techno'];
 
-        // 2. Metal & Core Subgenres
+        // 2. HOUSE & CLUB SUBGENRES
+        if (/\b(tech[- ]?house)\b/.test(t)) return ['Tech House'];
+        if (/\b(deep[- ]?house)\b/.test(t)) return ['Deep House'];
+        if (/\b(progressive house)\b/.test(t)) return ['Progressive House'];
+        if (/\b(electro[- ]?house|big room)\b/.test(t)) return ['Electro House'];
+        if (/\b(bass house)\b/.test(t)) return ['Bass House'];
+        if (/\b(future bass)\b/.test(t)) return ['Future Bass'];
+        if (/\b(house music|house)\b/.test(t)) return ['House'];
+
+        // 3. HARD DANCE, BASS & TRANCE
+        if (/\b(psytrance|goa|psychedelic trance)\b/.test(t)) return ['Psytrance'];
+        if (/\b(trance|uplifting trance|vocal trance)\b/.test(t)) return ['Trance'];
+        if (/\b(hardstyle|rawstyle|frenchcore|hardcore techno|gabber)\b/.test(t)) return ['Hardstyle / Hardcore'];
+        if (/\b(drum and bass|drum & bass|dnb|liquid funk|neurofunk|jungle)\b/.test(t)) return ['Drum & Bass'];
+        if (/\b(dubstep|brostep|riddim|deathstep)\b/.test(t)) return ['Dubstep'];
+        if (/\b(synthwave|retrowave|darksynth|vaporwave)\b/.test(t)) return ['Synthwave'];
+        if (/\b(hyperpop|glitchcore)\b/.test(t)) return ['Hyperpop'];
+
+        // 4. METAL & HEAVY SUBGENRES
         if (/\b(nu[- ]?metal|new metal)\b/.test(t)) return [isGerman ? 'Deutsch Nu-Metal' : 'Nu-Metal'];
-        if (/\b(metalcore|mathcore|deathcore|beatdown hardcore|beatdown|post[- ]?hardcore)\b/.test(t)) {
-            return [isGerman ? 'Deutsch Metalcore' : 'Metalcore'];
-        }
+        if (/\b(deathcore)\b/.test(t)) return [isGerman ? 'Deutsch Deathcore' : 'Deathcore'];
+        if (/\b(metalcore|progressive metalcore|mathcore)\b/.test(t)) return [isGerman ? 'Deutsch Metalcore' : 'Metalcore'];
+        if (/\b(post[- ]?hardcore)\b/.test(t)) return [isGerman ? 'Deutsch Post-Hardcore' : 'Post-Hardcore'];
+        if (/\b(beatdown|beatdown hardcore)\b/.test(t)) return ['Beatdown Hardcore'];
         if (/\b(gothic metal|symphonic metal)\b/.test(t)) return [isGerman ? 'Deutsch Gothic Metal' : 'Gothic Metal'];
-        if (/\b(gothic rock|goth rock|goth\b)/.test(t)) return [isGerman ? 'Deutsch Gothic Rock' : 'Gothic Rock'];
+        if (/\b(melodic death metal|melodeath)\b/.test(t)) return [isGerman ? 'Deutsch Melodic Death Metal' : 'Melodic Death Metal'];
+        if (/\b(death metal|brutal death metal)\b/.test(t)) return [isGerman ? 'Deutsch Death Metal' : 'Death Metal'];
+        if (/\b(black metal|symphonic black metal)\b/.test(t)) return [isGerman ? 'Deutsch Black Metal' : 'Black Metal'];
+        if (/\b(thrash metal)\b/.test(t)) return [isGerman ? 'Deutsch Thrash Metal' : 'Thrash Metal'];
+        if (/\b(power metal)\b/.test(t)) return [isGerman ? 'Deutsch Power Metal' : 'Power Metal'];
+        if (/\b(doom metal|sludge metal|stoner rock|stoner metal)\b/.test(t)) return [isGerman ? 'Deutsch Doom / Stoner' : 'Doom / Stoner'];
+        if (/\b(progressive metal|djent)\b/.test(t)) return [isGerman ? 'Deutsch Progressive Metal' : 'Progressive Metal'];
+        if (/\b(folk metal|pagan metal|viking metal)\b/.test(t)) return [isGerman ? 'Mittelalter / Folk Metal' : 'Folk Metal'];
         if (/\b(neue deutsche härte|industrial metal)\b/.test(t)) return [isGerman ? 'Deutsch Metal' : 'Industrial Metal'];
-        if (/\b(death metal|melodic death metal)\b/.test(t)) return [isGerman ? 'Deutsch Death Metal' : 'Death Metal'];
-        if (/\b(thrash metal|power metal|black metal|heavy metal|metal)\b/.test(t)) return [isGerman ? 'Deutsch Metal' : 'Metal'];
+        if (/\b(heavy metal|metal)\b/.test(t)) return [isGerman ? 'Deutsch Metal' : 'Heavy Metal'];
 
-        // 3. Punk & Rock Subgenres
-        if (/\b(deutschpunk|fun[- ]?punk|punk rock|punkrock|hardcore punk|punk|oi!|oi\b)/.test(t)) {
-            return [isGerman ? 'Deutschpunk' : 'Punk Rock'];
-        }
+        // 5. GOTHIC & DARK ALTERNATIVE
+        if (/\b(gothic rock|goth rock)\b/.test(t)) return [isGerman ? 'Deutsch Gothic Rock' : 'Gothic Rock'];
+        if (/\b(dark wave|darkwave|cold wave|coldwave)\b/.test(t)) return ['Darkwave'];
+        if (/\b(ebm|electronic body music|aggrotech|futurepop)\b/.test(t)) return ['EBM / Industrial'];
+        if (/\b(post[- ]?punk)\b/.test(t)) return [isGerman ? 'Deutsch Post-Punk' : 'Post-Punk'];
+        if (/\b(goth|gothic)\b/.test(t)) return [isGerman ? 'Deutsch Gothic Rock' : 'Gothic Rock'];
+
+        // 6. PUNK & ROCK SUBGENRES
+        if (/\b(deutschpunk)\b/.test(t)) return ['Deutschpunk'];
+        if (/\b(hardcore punk|skate punk|melodic hardcore)\b/.test(t)) return [isGerman ? 'Deutschpunk' : 'Hardcore Punk'];
+        if (/\b(pop[- ]?punk)\b/.test(t)) return [isGerman ? 'Deutsch Pop-Punk' : 'Pop-Punk'];
+        if (/\b(punk rock|punkrock|punk|oi!|oi\b)/.test(t)) return [isGerman ? 'Deutschpunk' : 'Punk Rock'];
         if (/\b(deutschrock)\b/.test(t)) return ['Deutschrock'];
-        if (/\b(pop[- ]?punk|post[- ]?grunge|grunge)\b/.test(t)) return [isGerman ? 'Deutschrock' : 'Alternative Rock'];
-        if (/\b(hard rock|alternative rock|indie rock|rockmusik|rock)\b/.test(t)) {
-            return [isGerman ? 'Deutschrock' : 'Rock'];
-        }
+        if (/\b(grunge|post[- ]?grunge)\b/.test(t)) return [isGerman ? 'Deutschrock' : 'Grunge'];
+        if (/\b(indie rock|indie pop|indie)\b/.test(t)) return [isGerman ? 'Deutsch Indie' : 'Indie Rock'];
+        if (/\b(psychedelic rock|psychedelic)\b/.test(t)) return ['Psychedelic Rock'];
+        if (/\b(hard rock)\b/.test(t)) return [isGerman ? 'Deutschrock' : 'Hard Rock'];
+        if (/\b(alternative rock|alt[- ]?rock)\b/.test(t)) return [isGerman ? 'Deutschrock' : 'Alternative Rock'];
+        if (/\b(classic rock|rockmusik|rock)\b/.test(t)) return [isGerman ? 'Deutschrock' : 'Rock'];
 
-        // 4. Hip-Hop & Rap Subgenres
-        if (/\b(deutschrap|cloud rap|trap|hip[- ]?hop|hip hop|rap|rapper|gangsta rap)\b/.test(t)) {
-            return [isGerman ? 'Deutscher Hip-Hop / Rap' : 'Hip-Hop / Rap'];
-        }
+        // 7. HIP-HOP & RAP SUBGENRES
+        if (/\b(deutschrap)\b/.test(t)) return ['Deutscher Hip-Hop / Rap'];
+        if (/\b(cloud rap)\b/.test(t)) return [isGerman ? 'Deutscher Cloud Rap' : 'Cloud Rap'];
+        if (/\b(trap|drill|uk drill)\b/.test(t)) return [isGerman ? 'Deutscher Trap / Drill' : 'Trap / Drill'];
+        if (/\b(boom bap|old school hip hop|90s hip hop)\b/.test(t)) return [isGerman ? 'Deutscher Hip-Hop' : 'Old School Hip-Hop'];
+        if (/\b(gangsta rap|hardcore rap)\b/.test(t)) return [isGerman ? 'Deutscher Gangsta Rap' : 'Gangsta Rap'];
+        if (/\b(hip[- ]?hop|hip hop|rap|rapper|pop rap)\b/.test(t)) return [isGerman ? 'Deutscher Hip-Hop / Rap' : 'Hip-Hop / Rap'];
 
-        // 5. Pop, R&B, Soul & Electronic fallback
-        if (/\b(r&b|contemporary r&b|soul|neo[- ]?soul|alt[- ]?r&b)\b/.test(t)) return ['R&B / Soul'];
-        if (/\b(soundtrack|score|film score|video game music)\b/.test(t)) return ['Soundtrack'];
-        if (/\b(electro|electronic|dance|edm|synth[- ]?pop)\b/.test(t)) return ['Electronic'];
-        if (/\b(pop|synthpop|dance[- ]?pop|indie pop)\b/.test(t)) return [isGerman ? 'Deutschpop' : 'Pop'];
+        // 8. R&B, SOUL, FUNK & REGGAE
+        if (/\b(neo[- ]?soul|soul music|soul)\b/.test(t)) return ['Soul'];
+        if (/\b(contemporary r&b|alt[- ]?r&b|r&b)\b/.test(t)) return ['R&B'];
+        if (/\b(funk)\b/.test(t)) return ['Funk'];
+        if (/\b(reggae|dancehall|dub)\b/.test(t)) return ['Reggae / Dancehall'];
+        if (/\b(ska)\b/.test(t)) return ['Ska'];
+
+        // 9. SOUNDTRACK, KLASSIK & AMBIENT
+        if (/\b(soundtrack|film score|score|video game music)\b/.test(t)) return ['Soundtrack'];
+        if (/\b(classical|klassik|orchestral)\b/.test(t)) return ['Klassik'];
+        if (/\b(ambient|chillout|downtempo|lo[- ]?fi)\b/.test(t)) return ['Ambient / Lo-Fi'];
+
+        // 10. POP & ELECTRONIC FALLBACK
+        if (/\b(synth[- ]?pop|synthpop)\b/.test(t)) return [isGerman ? 'Deutsch Synthpop' : 'Synthpop'];
+        if (/\b(dance[- ]?pop|electropop|disco)\b/.test(t)) return [isGerman ? 'Deutschpop' : 'Dance-Pop'];
+        if (/\b(popmusik|pop)\b/.test(t)) return [isGerman ? 'Deutschpop' : 'Pop'];
+        if (/\b(electronic|electro|dance|edm)\b/.test(t)) return ['Electronic'];
 
         return [];
     }
