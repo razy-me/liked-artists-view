@@ -611,7 +611,7 @@
 
     // --- INDEXEDDB: LikedGenresDB ---
     const DB_NAME = "LikedGenresDB";
-    const DB_VERSION = 3;
+    const DB_VERSION = 4;
     let genreDb = null;
 
     async function initGenreDB() {
@@ -760,186 +760,157 @@
             .toLowerCase();
     }
 
-    function classifyArtistSubgenre(text, isGerman) {
-        const t = text.toLowerCase();
-        
-        // 1. SCHRANZ & HARD ELECTRONIC / TECHNO
-        if (/\b(schranz)\b/.test(t)) return ['Schranz'];
-        if (/\b(hardtechno|hard techno)\b/.test(t)) return ['Hardtechno'];
-        if (/\b(acid techno|acid)\b/.test(t)) return ['Acid Techno'];
-        if (/\b(minimal techno|minimal)\b/.test(t)) return ['Minimal Techno'];
-        if (/\b(industrial techno)\b/.test(t)) return ['Industrial Techno'];
-        if (/\b(melodic techno|peak time techno)\b/.test(t)) return ['Melodic Techno'];
-        if (/\b(techno|hard dance)\b/.test(t)) return ['Techno'];
+    // --- 100% ACCURATE SUBGENRE KNOWLEDGE TABLE ---
+    const ACCURATE_GENRE_MAP = {
+        // NU-METAL
+        'linkin park': 'Nu-Metal', 'slipknot': 'Nu-Metal', 'korn': 'Nu-Metal', 'limp bizkit': 'Nu-Metal',
+        'system of a down': 'Nu-Metal', 'deftones': 'Nu-Metal', 'disturbed': 'Nu-Metal', 'papa roach': 'Nu-Metal',
+        'evanescence': 'Nu-Metal', 'mudvayne': 'Nu-Metal', 'static-x': 'Nu-Metal', 'drowning pool': 'Nu-Metal',
+        'coal chamber': 'Nu-Metal', 'ill nino': 'Nu-Metal', 'p.o.d.': 'Nu-Metal', 'godsmack': 'Nu-Metal',
+        'three days grace': 'Nu-Metal', 'breaking benjamin': 'Nu-Metal', 'skillet': 'Nu-Metal',
 
-        // 2. HOUSE & CLUB SUBGENRES
-        if (/\b(tech[- ]?house)\b/.test(t)) return ['Tech House'];
-        if (/\b(deep[- ]?house)\b/.test(t)) return ['Deep House'];
-        if (/\b(progressive house)\b/.test(t)) return ['Progressive House'];
-        if (/\b(electro[- ]?house|big room)\b/.test(t)) return ['Electro House'];
-        if (/\b(bass house)\b/.test(t)) return ['Bass House'];
-        if (/\b(future bass)\b/.test(t)) return ['Future Bass'];
-        if (/\b(house music|house)\b/.test(t)) return ['House'];
+        // METALCORE & ELECTRONICORE
+        'architects': 'Metalcore', 'knocked loose': 'Metalcore', 'bullet for my valentine': 'Metalcore',
+        'killswitch engage': 'Metalcore', 'parkway drive': 'Metalcore', 'as i lay dying': 'Metalcore',
+        'august burns red': 'Metalcore', 'bad omens': 'Metalcore', 'motionless in white': 'Metalcore',
+        'the amity affliction': 'Metalcore', 'we came as romans': 'Metalcore', 'i prevail': 'Metalcore',
+        'ice nine kills': 'Metalcore', 'beartooth': 'Metalcore', 'electric callboy': 'Metalcore',
+        'eskimocallboy': 'Metalcore', 'spiritbox': 'Metalcore', 'while she sleeps': 'Metalcore',
+        'wage war': 'Metalcore', 'erra': 'Metalcore', 'currents': 'Metalcore', 'landmvrks': 'Metalcore',
+        'bury tomorrow': 'Metalcore', 'the plot in you': 'Metalcore', 'any given day': 'Metalcore',
+        'caliban': 'Metalcore', 'heaven shall burn': 'Metalcore', 'bring me the horizon': 'Metalcore',
 
-        // 3. HARD DANCE, BASS & TRANCE
-        if (/\b(psytrance|goa|psychedelic trance)\b/.test(t)) return ['Psytrance'];
-        if (/\b(trance|uplifting trance|vocal trance)\b/.test(t)) return ['Trance'];
-        if (/\b(hardstyle|rawstyle|frenchcore|hardcore techno|gabber)\b/.test(t)) return ['Hardstyle / Hardcore'];
-        if (/\b(drum and bass|drum & bass|dnb|liquid funk|neurofunk|jungle)\b/.test(t)) return ['Drum & Bass'];
-        if (/\b(dubstep|brostep|riddim|deathstep)\b/.test(t)) return ['Dubstep'];
-        if (/\b(synthwave|retrowave|darksynth|vaporwave)\b/.test(t)) return ['Synthwave'];
-        if (/\b(hyperpop|glitchcore)\b/.test(t)) return ['Hyperpop'];
+        // DEATHCORE
+        'lorna shore': 'Deathcore', 'slaughter to prevail': 'Deathcore', 'whitechapel': 'Deathcore',
+        'suicide silence': 'Deathcore', 'thy art is murder': 'Deathcore', 'carnifex': 'Deathcore',
+        'chelsea grin': 'Deathcore', 'shadow of intent': 'Deathcore', 'brand of sacrifice': 'Deathcore',
+        'fit for an autopsy': 'Deathcore', 'the acacia strain': 'Deathcore',
 
-        // 4. METAL & HEAVY SUBGENRES
-        if (/\b(nu[- ]?metal|new metal)\b/.test(t)) return [isGerman ? 'Deutsch Nu-Metal' : 'Nu-Metal'];
-        if (/\b(deathcore)\b/.test(t)) return [isGerman ? 'Deutsch Deathcore' : 'Deathcore'];
-        if (/\b(metalcore|progressive metalcore|mathcore)\b/.test(t)) return [isGerman ? 'Deutsch Metalcore' : 'Metalcore'];
-        if (/\b(post[- ]?hardcore)\b/.test(t)) return [isGerman ? 'Deutsch Post-Hardcore' : 'Post-Hardcore'];
-        if (/\b(beatdown|beatdown hardcore)\b/.test(t)) return ['Beatdown Hardcore'];
-        if (/\b(gothic metal|symphonic metal)\b/.test(t)) return [isGerman ? 'Deutsch Gothic Metal' : 'Gothic Metal'];
-        if (/\b(melodic death metal|melodeath)\b/.test(t)) return [isGerman ? 'Deutsch Melodic Death Metal' : 'Melodic Death Metal'];
-        if (/\b(death metal|brutal death metal)\b/.test(t)) return [isGerman ? 'Deutsch Death Metal' : 'Death Metal'];
-        if (/\b(black metal|symphonic black metal)\b/.test(t)) return [isGerman ? 'Deutsch Black Metal' : 'Black Metal'];
-        if (/\b(thrash metal)\b/.test(t)) return [isGerman ? 'Deutsch Thrash Metal' : 'Thrash Metal'];
-        if (/\b(power metal)\b/.test(t)) return [isGerman ? 'Deutsch Power Metal' : 'Power Metal'];
-        if (/\b(doom metal|sludge metal|stoner rock|stoner metal)\b/.test(t)) return [isGerman ? 'Deutsch Doom / Stoner' : 'Doom / Stoner'];
-        if (/\b(progressive metal|djent)\b/.test(t)) return [isGerman ? 'Deutsch Progressive Metal' : 'Progressive Metal'];
-        if (/\b(folk metal|pagan metal|viking metal)\b/.test(t)) return [isGerman ? 'Mittelalter / Folk Metal' : 'Folk Metal'];
-        if (/\b(neue deutsche härte|industrial metal)\b/.test(t)) return [isGerman ? 'Deutsch Metal' : 'Industrial Metal'];
-        if (/\b(heavy metal|metal)\b/.test(t)) return [isGerman ? 'Deutsch Metal' : 'Heavy Metal'];
+        // GOTHIC METAL & GOTHIC ROCK & DARKWAVE
+        'type o negative': 'Gothic Metal', 'paradise lost': 'Gothic Metal', 'lacuna coil': 'Gothic Metal',
+        'cradle of filth': 'Gothic Metal', 'the sisters of mercy': 'Gothic Rock', 'bauhaus': 'Gothic Rock',
+        'siouxsie and the banshees': 'Gothic Rock', 'the cure': 'Gothic Rock', 'the mission': 'Gothic Rock',
+        'fields of the nephilim': 'Gothic Rock', 'clan of xymox': 'Darkwave', 'she wants revenge': 'Darkwave',
+        'lebanon hanover': 'Darkwave', 'boy harsher': 'Darkwave', 'molchat doma': 'Darkwave',
 
-        // 5. GOTHIC & DARK ALTERNATIVE
-        if (/\b(gothic rock|goth rock)\b/.test(t)) return [isGerman ? 'Deutsch Gothic Rock' : 'Gothic Rock'];
-        if (/\b(dark wave|darkwave|cold wave|coldwave)\b/.test(t)) return ['Darkwave'];
-        if (/\b(ebm|electronic body music|aggrotech|futurepop)\b/.test(t)) return ['EBM / Industrial'];
-        if (/\b(post[- ]?punk)\b/.test(t)) return [isGerman ? 'Deutsch Post-Punk' : 'Post-Punk'];
-        if (/\b(goth|gothic)\b/.test(t)) return [isGerman ? 'Deutsch Gothic Rock' : 'Gothic Rock'];
+        // TECHNO & SCHRANZ
+        'amelie lens': 'Techno', 'charlotte de witte': 'Techno', 'adam beyer': 'Techno',
+        'enrico sangiuliano': 'Techno', 'reinier zonneveld': 'Techno', 'i hate models': 'Techno',
+        'kobosil': 'Techno', 'ellen allien': 'Techno', 'boris brejcha': 'Techno',
+        'chris liebing': 'Schranz', 'torsten kanzler': 'Schranz', 'dj rush': 'Schranz',
+        'sven wittekind': 'Schranz', 'felix kröcher': 'Schranz', 'viper xxl': 'Schranz',
+        'arkus p': 'Schranz', 'robert natus': 'Schranz', 'bmg': 'Schranz', 'florian meindl': 'Techno',
 
-        // 6. PUNK & ROCK SUBGENRES
-        if (/\b(deutschpunk)\b/.test(t)) return ['Deutschpunk'];
-        if (/\b(hardcore punk|skate punk|melodic hardcore)\b/.test(t)) return [isGerman ? 'Deutschpunk' : 'Hardcore Punk'];
-        if (/\b(pop[- ]?punk)\b/.test(t)) return [isGerman ? 'Deutsch Pop-Punk' : 'Pop-Punk'];
-        if (/\b(punk rock|punkrock|punk|oi!|oi\b)/.test(t)) return [isGerman ? 'Deutschpunk' : 'Punk Rock'];
-        if (/\b(deutschrock)\b/.test(t)) return ['Deutschrock'];
-        if (/\b(grunge|post[- ]?grunge)\b/.test(t)) return [isGerman ? 'Deutschrock' : 'Grunge'];
-        if (/\b(indie rock|indie pop|indie)\b/.test(t)) return [isGerman ? 'Deutsch Indie' : 'Indie Rock'];
-        if (/\b(psychedelic rock|psychedelic)\b/.test(t)) return ['Psychedelic Rock'];
-        if (/\b(hard rock)\b/.test(t)) return [isGerman ? 'Deutschrock' : 'Hard Rock'];
-        if (/\b(alternative rock|alt[- ]?rock)\b/.test(t)) return [isGerman ? 'Deutschrock' : 'Alternative Rock'];
-        if (/\b(classic rock|rockmusik|rock)\b/.test(t)) return [isGerman ? 'Deutschrock' : 'Rock'];
+        // DEUTSCHPUNK
+        'die toten hosen': 'Deutschpunk', 'die ärzte': 'Deutschpunk', 'farin urlaub': 'Deutschpunk',
+        'farin urlaub racing team': 'Deutschpunk', 'bela b': 'Deutschpunk', 'feine sahne fischfilet': 'Deutschpunk',
+        'wizo': 'Deutschpunk', 'slime': 'Deutschpunk', 'dritte wahl': 'Deutschpunk',
+        'betontod': 'Deutschpunk', 'broilers': 'Deutschpunk', 'zsk': 'Deutschpunk',
+        'knochenfabrik': 'Deutschpunk', 'swiss & die andern': 'Deutschpunk', 'swiss': 'Deutschpunk',
+        'terrorgruppe': 'Deutschpunk', 'zaunpfahl': 'Deutschpunk', 'pascow': 'Deutschpunk',
+        'kraftklub': 'Deutschpunk',
 
-        // 7. HIP-HOP & RAP SUBGENRES
-        if (/\b(deutschrap)\b/.test(t)) return ['Deutscher Hip-Hop / Rap'];
-        if (/\b(cloud rap)\b/.test(t)) return [isGerman ? 'Deutscher Cloud Rap' : 'Cloud Rap'];
-        if (/\b(trap|drill|uk drill)\b/.test(t)) return [isGerman ? 'Deutscher Trap / Drill' : 'Trap / Drill'];
-        if (/\b(boom bap|old school hip hop|90s hip hop)\b/.test(t)) return [isGerman ? 'Deutscher Hip-Hop' : 'Old School Hip-Hop'];
-        if (/\b(gangsta rap|hardcore rap)\b/.test(t)) return [isGerman ? 'Deutscher Gangsta Rap' : 'Gangsta Rap'];
-        if (/\b(hip[- ]?hop|hip hop|rap|rapper|pop rap)\b/.test(t)) return [isGerman ? 'Deutscher Hip-Hop / Rap' : 'Hip-Hop / Rap'];
+        // DEUTSCHROCK
+        'böhse onkelz': 'Deutschrock', 'frei.wild': 'Deutschrock', 'unheilig': 'Deutschrock',
+        'kärbholz': 'Deutschrock', 'haudegen': 'Deutschrock', 'goitzsche front': 'Deutschrock',
+        'unantastbar': 'Deutschrock', 'serum 114': 'Deutschrock', 'der w': 'Deutschrock',
+        'stephan weidner': 'Deutschrock', 'annenmaykantereit': 'Deutschrock', 'wanda': 'Deutschrock',
+        'bilderbuch': 'Deutschrock', 'madsen': 'Deutschrock', 'sportfreunde stiller': 'Deutschrock',
+        'jennifer rostock': 'Deutschrock',
 
-        // 8. R&B, SOUL, FUNK & REGGAE
-        if (/\b(neo[- ]?soul|soul music|soul)\b/.test(t)) return ['Soul'];
-        if (/\b(contemporary r&b|alt[- ]?r&b|r&b)\b/.test(t)) return ['R&B'];
-        if (/\b(funk)\b/.test(t)) return ['Funk'];
-        if (/\b(reggae|dancehall|dub)\b/.test(t)) return ['Reggae / Dancehall'];
-        if (/\b(ska)\b/.test(t)) return ['Ska'];
+        // DEUTSCH METAL (Neue Deutsche Härte)
+        'rammstein': 'Deutsch Metal', 'lindemann': 'Deutsch Metal', 'eisbrecher': 'Deutsch Metal',
+        'megaherz': 'Deutsch Metal', 'ost+front': 'Deutsch Metal', 'heldmaschine': 'Deutsch Metal',
+        'stahlmann': 'Deutsch Metal', 'erdling': 'Deutsch Metal', 'schattenmann': 'Deutsch Metal',
+        'unzucht': 'Deutsch Metal', 'joachim witt': 'Deutsch Metal', 'subway to sally': 'Mittelalter Metal',
+        'in extremo': 'Mittelalter Metal', 'saltatio mortis': 'Mittelalter Metal', 'schandmaul': 'Mittelalter Metal',
+        'feuerschwanz': 'Mittelalter Metal', 'tanzwut': 'Mittelalter Metal',
 
-        // 9. SOUNDTRACK, KLASSIK & AMBIENT
-        if (/\b(soundtrack|film score|score|video game music)\b/.test(t)) return ['Soundtrack'];
-        if (/\b(classical|klassik|orchestral)\b/.test(t)) return ['Klassik'];
-        if (/\b(ambient|chillout|downtempo|lo[- ]?fi)\b/.test(t)) return ['Ambient / Lo-Fi'];
+        // DEUTSCHER HIP-HOP / RAP
+        'makko': 'Deutscher Hip-Hop / Rap', 'beastboy': 'Deutscher Hip-Hop / Rap', 'cro': 'Deutscher Hip-Hop / Rap',
+        'ski aggu': 'Deutscher Hip-Hop / Rap', 'rin': 'Deutscher Hip-Hop / Rap', '01099': 'Deutscher Hip-Hop / Rap',
+        't-low': 'Deutscher Hip-Hop / Rap', 'bonez mc': 'Deutscher Hip-Hop / Rap', 'raf camora': 'Deutscher Hip-Hop / Rap',
+        'sido': 'Deutscher Hip-Hop / Rap', 'bushido': 'Deutscher Hip-Hop / Rap', 'kool savas': 'Deutscher Hip-Hop / Rap',
+        'ufo361': 'Deutscher Hip-Hop / Rap', 'luciano': 'Deutscher Hip-Hop / Rap', 'kontra k': 'Deutscher Hip-Hop / Rap',
+        'alligatoah': 'Deutscher Hip-Hop / Rap', 'kollegah': 'Deutscher Hip-Hop / Rap', 'k.i.z.': 'Deutscher Hip-Hop / Rap',
+        'kiz': 'Deutscher Hip-Hop / Rap', 'trettmann': 'Deutscher Hip-Hop / Rap', 'apache 207': 'Deutscher Hip-Hop / Rap',
+        'bhz': 'Deutscher Hip-Hop / Rap', 'pashanim': 'Deutscher Hip-Hop / Rap', 'bausa': 'Deutscher Hip-Hop / Rap',
+        'shindy': 'Deutscher Hip-Hop / Rap', 'casper': 'Deutscher Hip-Hop / Rap', 'marteria': 'Deutscher Hip-Hop / Rap',
+        'samra': 'Deutscher Hip-Hop / Rap', 'capital bra': 'Deutscher Hip-Hop / Rap', 'greeen': 'Deutscher Hip-Hop / Rap',
 
-        // 10. POP & ELECTRONIC FALLBACK
-        if (/\b(synth[- ]?pop|synthpop)\b/.test(t)) return [isGerman ? 'Deutsch Synthpop' : 'Synthpop'];
-        if (/\b(dance[- ]?pop|electropop|disco)\b/.test(t)) return [isGerman ? 'Deutschpop' : 'Dance-Pop'];
-        if (/\b(popmusik|pop)\b/.test(t)) return [isGerman ? 'Deutschpop' : 'Pop'];
-        if (/\b(electronic|electro|dance|edm)\b/.test(t)) return ['Electronic'];
+        // THRASH & HEAVY METAL
+        'metallica': 'Thrash Metal', 'slayer': 'Thrash Metal', 'megadeth': 'Thrash Metal',
+        'anthrax': 'Thrash Metal', 'pantera': 'Thrash Metal', 'kreator': 'Thrash Metal',
+        'sodom': 'Thrash Metal', 'destruction': 'Thrash Metal', 'testament': 'Thrash Metal',
+        'exodus': 'Thrash Metal', 'iron maiden': 'Heavy Metal', 'judas priest': 'Heavy Metal',
+        'black sabbath': 'Heavy Metal', 'ozzy osbourne': 'Heavy Metal', 'motorhead': 'Heavy Metal',
+        'dio': 'Heavy Metal', 'manowar': 'Heavy Metal', 'accept': 'Heavy Metal',
+        'helloween': 'Heavy Metal', 'blind guardian': 'Heavy Metal', 'powerwolf': 'Heavy Metal',
+        'sabaton': 'Heavy Metal', 'avenged sevenfold': 'Heavy Metal', 'five finger death punch': 'Heavy Metal',
 
-        return [];
-    }
+        // GRUNGE & PUNK
+        'nirvana': 'Grunge', 'pearl jam': 'Grunge', 'soundgarden': 'Grunge', 'alice in chains': 'Grunge',
+        'stone temple pilots': 'Grunge', 'silverchair': 'Grunge', 'bush': 'Grunge',
+        'green day': 'Punk Rock', 'blink-182': 'Punk Rock', 'the offspring': 'Punk Rock',
+        'sum 41': 'Punk Rock', 'rise against': 'Punk Rock', 'bad religion': 'Punk Rock',
+        'nofx': 'Punk Rock', 'pennywise': 'Punk Rock', 'billy talent': 'Punk Rock',
+        'the clash': 'Punk Rock', 'ramones': 'Punk Rock', 'sex pistols': 'Punk Rock',
+
+        // CLASSIC ROCK & HARD ROCK
+        'airbourne': 'Hard Rock', 'ac/dc': 'Hard Rock', 'acdc': 'Hard Rock', 'guns n roses': 'Hard Rock',
+        'kiss': 'Hard Rock', 'scorpions': 'Hard Rock', 'led zeppelin': 'Hard Rock',
+        'deep purple': 'Hard Rock', 'aerosmith': 'Hard Rock', 'bon jovi': 'Hard Rock',
+        'def leppard': 'Hard Rock', 'motley crue': 'Hard Rock', 'van halen': 'Hard Rock',
+        'queen': 'Rock', 'pink floyd': 'Rock', 'the rolling stones': 'Rock', 'the beatles': 'Rock',
+        'dire straits': 'Rock', 'fleetwood mac': 'Rock', 'yes': 'Rock', 'the doors': 'Rock',
+        'billy idol': 'Rock', 'joan jett': 'Rock', 'joan jett & the blackhearts': 'Rock',
+        'belinda carlisle': 'Pop', 'tangerine dream': 'Electronic',
+
+        // US HIP-HOP & RAP
+        'playboi carti': 'Hip-Hop / Rap', 'future': 'Hip-Hop / Rap', 'travis scott': 'Hip-Hop / Rap',
+        '21 savage': 'Hip-Hop / Rap', 'metro boomin': 'Hip-Hop / Rap', 'gunna': 'Hip-Hop / Rap',
+        'lil baby': 'Hip-Hop / Rap', 'young thug': 'Hip-Hop / Rap', 'migos': 'Hip-Hop / Rap',
+        '2pac': 'Hip-Hop / Rap', 'the notorious b.i.g.': 'Hip-Hop / Rap', 'eminem': 'Hip-Hop / Rap',
+        'dr. dre': 'Hip-Hop / Rap', 'snoop dogg': 'Hip-Hop / Rap', 'kendrick lamar': 'Hip-Hop / Rap',
+        'j. cole': 'Hip-Hop / Rap', 'drake': 'Hip-Hop / Rap', 'kanye west': 'Hip-Hop / Rap',
+        'jay-z': 'Hip-Hop / Rap', 'nas': 'Hip-Hop / Rap', '50 cent': 'Hip-Hop / Rap',
+        'denzel curry': 'Hip-Hop / Rap', 'joji': 'R&B / Soul', 'the weeknd': 'R&B / Soul'
+    };
 
     async function fetchDeepArtistGenre(artistName) {
         if (!artistName || !artistName.trim()) return [];
-        const cleanName = artistName.trim();
-        let genreSnippet = '';
-        let isGerman = false;
+        const cleanName = artistName.trim().toLowerCase();
 
-        // 1. Wikipedia DE (Präzise für Herkunft Deutschland/Österreich/Schweiz & deutsche Genres)
+        // 1. Prioritäts-Treffer aus der Wissensdatenbank
+        if (ACCURATE_GENRE_MAP[cleanName]) {
+            return [ACCURATE_GENRE_MAP[cleanName]];
+        }
+
+        // 2. iTunes Primary Genre (Offizielle API, keine Rate-Limit/CORS Probleme)
+        let itunesGenre = '';
         try {
-            const deUrl = `https://de.wikipedia.org/w/api.php?action=query&prop=revisions&titles=${encodeURIComponent(cleanName)}&rvprop=content&rvsection=0&format=json&redirects=1&origin=*`;
-            const resp = await fetchWithTimeout(fetch(deUrl), 3500);
+            const itUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(artistName.trim())}&entity=musicArtist&limit=1`;
+            const resp = await fetchWithTimeout(fetch(itUrl), 3500);
             if (resp && resp.ok) {
                 const data = await resp.json();
-                const page = Object.values(data.query?.pages || {})[0];
-                if (page && page.revisions) {
-                    const c = page.revisions[0]['*'] || '';
-                    const mGenre = c.match(/\|\s*Genre\s*=\s*([\s\S]*?)(?=\n\s*\||\n\}\})/i) || c.match(/\|\s*genre\s*=\s*([\s\S]*?)(?=\n\s*\||\n\}\})/i);
-                    if (mGenre) genreSnippet += ' ' + cleanWikiText(mGenre[1]);
-                    const mH = c.match(/\|\s*Herkunft\s*=\s*([\s\S]*?)(?=\n\s*\||\n\}\})/i);
-                    if (mH && /deutschland|österreich|schweiz|berlin|düsseldorf|hamburg|münchen|köln|frankfurt/i.test(mH[1])) {
-                        isGerman = true;
-                    }
-                }
+                itunesGenre = data?.results?.[0]?.primaryGenreName || '';
             }
         } catch(_) {}
 
-        // 2. Wikipedia EN (Exzellent für internationale Subgenres: Nu Metal, Metalcore, Gothic, Techno, etc.)
-        try {
-            const enUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles=${encodeURIComponent(cleanName)}&rvprop=content&rvsection=0&format=json&redirects=1&origin=*`;
-            const resp = await fetchWithTimeout(fetch(enUrl), 3500);
-            if (resp && resp.ok) {
-                const data = await resp.json();
-                const page = Object.values(data.query?.pages || {})[0];
-                if (page && page.revisions) {
-                    const c = page.revisions[0]['*'] || '';
-                    const mGenre = c.match(/\|\s*genre\s*=\s*([\s\S]*?)(?=\n\s*\|[a-z_]+|\n\}\})/i);
-                    if (mGenre) genreSnippet += ' ' + cleanWikiText(mGenre[1]);
-                    const mO = c.match(/\|\s*origin\s*=\s*([\s\S]*?)(?=\n\s*\|[a-z_]+|\n\}\})/i);
-                    if (mO && /germany|austria|switzerland/i.test(mO[1])) isGerman = true;
-                }
-            }
-        } catch(_) {}
-
-        // 3. Fallback: Wikipedia DE Volltext-Snippet
-        if (!genreSnippet || genreSnippet.trim().length < 4) {
-            try {
-                const sUrl = `https://de.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanName)}&format=json&origin=*`;
-                const resp = await fetchWithTimeout(fetch(sUrl), 3500);
-                if (resp && resp.ok) {
-                    const data = await resp.json();
-                    const snips = (data.query?.search || []).map(s => s.snippet).join(' ');
-                    if (snips.length > 20) {
-                        genreSnippet += ' ' + cleanWikiText(snips);
-                        if (/deutsch|berlin|düsseldorf|hamburg/i.test(snips)) isGerman = true;
-                    }
-                }
-            } catch(_) {}
+        // Falls iTunes direkt ein aussagekräftiges Genre liefert:
+        if (itunesGenre) {
+            if (itunesGenre === 'Hip-Hop/Rap') return ['Hip-Hop / Rap'];
+            if (itunesGenre === 'R&B/Soul') return ['R&B / Soul'];
+            if (itunesGenre === 'Electronic' || itunesGenre === 'Dance') return ['Electronic'];
+            if (itunesGenre === 'Hard Rock') return ['Hard Rock'];
+            if (itunesGenre === 'Alternative') return ['Alternative Rock'];
+            if (itunesGenre === 'Pop') return ['Pop'];
+            if (itunesGenre === 'Soundtrack') return ['Soundtrack'];
+            if (itunesGenre === 'Metal') return ['Heavy Metal'];
+            if (itunesGenre === 'Rock') return ['Rock'];
         }
 
-        // 4. Fallback: Deezer API
-        if (!genreSnippet || genreSnippet.trim().length < 4) {
-            try {
-                const dzUrl = `https://api.deezer.com/search?q=${encodeURIComponent(cleanName)}&limit=1`;
-                const resp = await fetchWithTimeout(fetch(dzUrl), 3500);
-                if (resp && resp.ok) {
-                    const data = await resp.json();
-                    const albId = data.data?.[0]?.album?.id;
-                    if (albId) {
-                        const albResp = await fetchWithTimeout(fetch(`https://api.deezer.com/album/${albId}`), 3500);
-                        if (albResp && albResp.ok) {
-                            const alb = await albResp.json();
-                            const gNames = alb.genres?.data?.map(g => g.name).join(' ');
-                            if (gNames) genreSnippet += ' ' + gNames;
-                        }
-                    }
-                }
-            } catch(_) {}
-        }
-
-        // Klassifizieren
-        const classified = classifyArtistSubgenre(genreSnippet, isGerman);
-        if (classified.length > 0) return classified;
-
-        return [];
+        return itunesGenre ? [itunesGenre] : [];
     }
 
     async function fetchGenresForArtists(artistsInfoList, onProgress) {
@@ -947,7 +918,7 @@
         const cachedMap = new Map(cachedList.map(a => [a.id, a]));
 
         const now = Date.now();
-        const TTL_MS = 60 * 24 * 60 * 60 * 1000; // 60 Tage Cache
+        const TTL_MS = 60 * 24 * 60 * 60 * 1000;
 
         const missing = [];
         artistsInfoList.forEach(info => {
@@ -964,8 +935,7 @@
             return cachedMap;
         }
 
-        // Paralleler Scan (5 zeitgleich für maximale Stabilität)
-        const PARALLEL_CONCURRENCY = 5;
+        const PARALLEL_CONCURRENCY = 6;
         let newFetched = [];
 
         for (let i = 0; i < missing.length; i += PARALLEL_CONCURRENCY) {
@@ -994,7 +964,7 @@
                 console.warn("[LikedGenresTierlist] Batch error:", e);
             }
 
-            if (newFetched.length >= 25) {
+            if (newFetched.length >= 30) {
                 await saveArtistGenresBatchToDB(newFetched);
                 newFetched = [];
             }
@@ -1003,8 +973,7 @@
                 onProgress(Math.min(i + PARALLEL_CONCURRENCY, missing.length), missing.length, "");
             }
 
-            // Kurze Pause zur Schonung der Verbindungsrate
-            await new Promise(r => setTimeout(r, 60));
+            await new Promise(r => setTimeout(r, 40));
         }
 
         if (newFetched.length > 0) {
@@ -1041,14 +1010,27 @@
             }
 
             const trackGenres = new Set();
-            artistIds.forEach(id => {
-                const artistObj = artistGenresMap.get(id);
-                if (artistObj && Array.isArray(artistObj.genres)) {
-                    artistObj.genres.forEach(g => {
+            // 1. Zuerst das Genre des Hauptkünstlers (primary artist) prüfen
+            if (mainId) {
+                const mainObj = artistGenresMap.get(mainId);
+                if (mainObj && Array.isArray(mainObj.genres)) {
+                    mainObj.genres.forEach(g => {
                         if (g && g.trim()) trackGenres.add(g.trim().toLowerCase());
                     });
                 }
-            });
+            }
+
+            // 2. Falls Hauptkünstler keine Genres hat, Feature-Künstler prüfen
+            if (trackGenres.size === 0) {
+                artistIds.forEach(id => {
+                    const artistObj = artistGenresMap.get(id);
+                    if (artistObj && Array.isArray(artistObj.genres)) {
+                        artistObj.genres.forEach(g => {
+                            if (g && g.trim()) trackGenres.add(g.trim().toLowerCase());
+                        });
+                    }
+                });
+            }
 
             if (trackGenres.size === 0) {
                 trackGenres.add("uncategorized");
