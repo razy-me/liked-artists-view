@@ -611,7 +611,7 @@
 
     // --- INDEXEDDB: LikedGenresDB ---
     const DB_NAME = "LikedGenresDB";
-    const DB_VERSION = 4;
+    const DB_VERSION = 5;
     let genreDb = null;
 
     async function initGenreDB() {
@@ -908,9 +908,38 @@
             if (itunesGenre === 'Soundtrack') return ['Soundtrack'];
             if (itunesGenre === 'Metal') return ['Heavy Metal'];
             if (itunesGenre === 'Rock') return ['Rock'];
+            return [itunesGenre];
         }
 
-        return itunesGenre ? [itunesGenre] : [];
+        // 3. Deezer API Fallback (Extrem zuverlässig für alle Artists, falls iTunes 403 blockiert oder nichts findet)
+        try {
+            const dzUrl = `https://api.deezer.com/search?q=${encodeURIComponent(artistName.trim())}&limit=1`;
+            const dzResp = await fetchWithTimeout(fetch(dzUrl), 3500);
+            if (dzResp && dzResp.ok) {
+                const dzData = await dzResp.json();
+                const albId = dzData?.data?.[0]?.album?.id;
+                if (albId) {
+                    const albResp = await fetchWithTimeout(fetch(`https://api.deezer.com/album/${albId}`), 3500);
+                    if (albResp && albResp.ok) {
+                        const albData = await albResp.json();
+                        const rawGenres = albData?.genres?.data?.map(g => g.name) || [];
+                        const str = rawGenres.join(' ').toLowerCase();
+                        if (/metal|heavy metal|hard rock/i.test(str)) return ['Heavy Metal'];
+                        if (/rap|hip hop/i.test(str)) return ['Hip-Hop / Rap'];
+                        if (/r&b|soul/i.test(str)) return ['R&B / Soul'];
+                        if (/electro|techno|house|dance/i.test(str)) return ['Electronic'];
+                        if (/alternative|indie/i.test(str)) return ['Alternative Rock'];
+                        if (/punk/i.test(str)) return ['Punk Rock'];
+                        if (/rock/i.test(str)) return ['Rock'];
+                        if (/film|soundtrack/i.test(str)) return ['Soundtrack'];
+                        if (/pop/i.test(str)) return ['Pop'];
+                        if (rawGenres.length > 0) return [rawGenres[0]];
+                    }
+                }
+            }
+        } catch(_) {}
+
+        return [];
     }
 
     async function fetchGenresForArtists(artistsInfoList, onProgress) {
