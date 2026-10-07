@@ -741,45 +741,51 @@
         ]);
     }
 
-    async function fetchArtistBatch(chunk, token) {
+    async function fetchArtistBatch(chunk, token, onStatus) {
         if (!chunk || !chunk.length) return [];
         const ids = chunk.join(',');
 
-        // 1. Spicetify.CosmosAsync with direct URL (uses Spotify's native authenticated internal bridge)
+        // 1. Spicetify.CosmosAsync with direct URL
         try {
             if (Spicetify.CosmosAsync?.get) {
-                const res = await fetchWithTimeout(Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/artists?ids=${ids}`), 4000);
+                const res = await fetchWithTimeout(Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/artists?ids=${ids}`), 6000);
                 if (res?.artists && Array.isArray(res.artists)) {
                     return res.artists.filter(Boolean);
                 }
             }
         } catch(e) {
-            console.warn("CosmosAsync artists error:", e);
+            // Check if CosmosAsync returned 429 error
+            if (e?.status === 429 || (e?.message && e.message.includes('429'))) {
+                const waitSec = 5;
+                if (onStatus) onStatus(`Rate-Limit erreicht. Warte ${waitSec}s...`);
+                await new Promise(r => setTimeout(r, waitSec * 1000));
+            }
         }
 
         // 2. Direct fetch with bearer token
         try {
             const authToken = token || await getSpotifyToken();
             if (authToken) {
-                const resp = await fetchWithTimeout(fetch(`https://api.spotify.com/v1/artists?ids=${ids}`, {
+                let resp = await fetchWithTimeout(fetch(`https://api.spotify.com/v1/artists?ids=${ids}`, {
                     headers: { "Authorization": `Bearer ${authToken}` }
-                }), 5000);
+                }), 7000);
 
-                if (resp.status === 429) {
-                    const retrySec = parseInt(resp.headers.get("Retry-After") || "3", 10);
-                    console.warn(`[LikedGenresTierlist] Rate limit (429)! Warte ${retrySec} Sekunden...`);
+                if (resp && resp.status === 429) {
+                    let retrySec = 5;
+                    try {
+                        const h = resp.headers.get("Retry-After");
+                        if (h) retrySec = Math.max(parseInt(h, 10) || 5, 3);
+                    } catch(_) {}
+                    
+                    if (onStatus) onStatus(`Rate-Limit erreicht. Pausiere für ${retrySec}s...`);
                     await new Promise(r => setTimeout(r, (retrySec + 1) * 1000));
-                    // Einmaliger Retry nach dem Warten
-                    const retryResp = await fetchWithTimeout(fetch(`https://api.spotify.com/v1/artists?ids=${ids}`, {
+
+                    resp = await fetchWithTimeout(fetch(`https://api.spotify.com/v1/artists?ids=${ids}`, {
                         headers: { "Authorization": `Bearer ${authToken}` }
-                    }), 5000);
-                    if (retryResp.ok) {
-                        const data = await retryResp.json();
-                        if (data?.artists && Array.isArray(data.artists)) {
-                            return data.artists.filter(Boolean);
-                        }
-                    }
-                } else if (resp.ok) {
+                    }), 7000);
+                }
+
+                if (resp && resp.ok) {
                     const data = await resp.json();
                     if (data?.artists && Array.isArray(data.artists)) {
                         return data.artists.filter(Boolean);
@@ -787,7 +793,7 @@
                 }
             }
         } catch(e) {
-            console.warn("Direct fetch artists error:", e);
+            console.warn("[LikedGenresTierlist] Fetch batch error:", e);
         }
 
         return [];
@@ -810,21 +816,27 @@
             }
         });
 
-        console.log(`LikedGenresTierlist: Total artists=${uniqueIds.length}, missing/needing fetch=${missingIds.length}`);
+        console.log(`[LikedGenresTierlist] Total artists=${uniqueIds.length}, needing fetch=${missingIds.length}`);
 
         if (missingIds.length > 0) {
-            const token = await getSpotifyToken();
-            const BATCH_SIZE = 50;
-            const newFetchedArtists = [];
+            let token = await getSpotifyToken();
+            const BATCH_SIZE = 25; // Kleinere Batch-Größe um Burst-Rate-Limits zu vermeiden
+            let newFetchedArtists = [];
 
             for (let i = 0; i < missingIds.length; i += BATCH_SIZE) {
                 const chunk = missingIds.slice(i, i + BATCH_SIZE);
+                const currentCount = i;
+                const totalCount = missingIds.length;
+
                 if (onProgress) {
-                    onProgress(i, missingIds.length);
+                    onProgress(currentCount, totalCount, "");
                 }
 
                 try {
-                    const artists = await fetchArtistBatch(chunk, token);
+                    const artists = await fetchArtistBatch(chunk, token, (statusMsg) => {
+                        if (onProgress) onProgress(currentCount, totalCount, statusMsg);
+                    });
+
                     if (artists && Array.isArray(artists)) {
                         artists.forEach(a => {
                             if (a && a.id) {
@@ -843,29 +855,25 @@
                         });
                     }
                 } catch(err) {
-                    console.warn("LikedGenresTierlist: Batch fetch error", err);
+                    console.warn("[LikedGenresTierlist] Batch fetch error, continuing:", err);
                 }
 
-                // Periodic save to IndexedDB so progress is preserved even if interrupted
-                if (newFetchedArtists.length >= 100) {
+                // Sofort nach jedem Batch in IndexedDB sichern
+                if (newFetchedArtists.length > 0) {
                     await saveArtistGenresBatchToDB(newFetchedArtists);
-                    newFetchedArtists.length = 0;
+                    newFetchedArtists = [];
                 }
 
                 if (onProgress) {
-                    onProgress(Math.min(i + BATCH_SIZE, missingIds.length), missingIds.length);
+                    onProgress(Math.min(i + BATCH_SIZE, totalCount), totalCount, "");
                 }
 
-                await new Promise(r => setTimeout(r, 180));
-            }
-
-            if (newFetchedArtists.length > 0) {
-                await saveArtistGenresBatchToDB(newFetchedArtists);
-                console.log(`LikedGenresTierlist: Saved remaining artists to IndexedDB.`);
+                // Kleine Pause zwischen Requests um Spotify API zu schonen
+                await new Promise(r => setTimeout(r, 220));
             }
         }
 
-        if (onProgress) onProgress(uniqueIds.length, uniqueIds.length);
+        if (onProgress) onProgress(uniqueIds.length, uniqueIds.length, "");
         return cachedMap;
     }
 
@@ -1469,9 +1477,10 @@
 
             // 4. Genres von Spotify abrufen & cachen (mit Authentifizierung)
             renderLoadingView(`Lade Künstler-Genres (${artistIds.length} Songs)...`, 0);
-            const artistGenresMap = await fetchGenresForArtists(artistIds, (cur, tot) => {
+            const artistGenresMap = await fetchGenresForArtists(artistIds, (cur, tot, statusMsg) => {
                 const pct = tot > 0 ? Math.round((cur / tot) * 100) : 0;
-                renderLoadingView(`Analysiere Künstler (${cur.toLocaleString()} / ${tot.toLocaleString()})...`, pct);
+                const statusSuffix = statusMsg ? ` · ${statusMsg}` : "";
+                renderLoadingView(`Analysiere Künstler (${cur.toLocaleString()} / ${tot.toLocaleString()})${statusSuffix}`, pct);
             });
 
             // 5. Daten aggregieren
