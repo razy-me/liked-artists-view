@@ -611,7 +611,7 @@
 
     // --- INDEXEDDB: LikedGenresDB ---
     const DB_NAME = "LikedGenresDB";
-    const DB_VERSION = 1;
+    const DB_VERSION = 2;
     let genreDb = null;
 
     async function initGenreDB() {
@@ -743,36 +743,160 @@
 
     let rateLimitCooloffUntil = 0;
 
-    // --- ITUNES MUSIC ARTIST GENRE FETCHER (High Reliability, Instant, No Rate Limit) ---
-    async function fetchGenreFromITunes(artistName) {
-        if (!artistName || !artistName.trim()) return [];
-        try {
-            const query = encodeURIComponent(artistName.trim());
-            const url = `https://itunes.apple.com/search?term=${query}&entity=musicArtist&limit=1`;
-            const resp = await fetchWithTimeout(fetch(url), 4000);
-            if (resp && resp.ok) {
-                const data = await resp.json();
-                if (data && data.results && data.results.length > 0) {
-                    const genre = data.results[0].primaryGenreName;
-                    if (genre && typeof genre === 'string' && genre.trim()) {
-                        return [genre.trim()];
-                    }
-                }
-            }
-        } catch(e) {
-            // Silently ignore network timeouts
+    // --- SUBGENRE & LANGUAGE CLASSIFIER ENGINE ---
+    function cleanWikiText(raw) {
+        if (!raw) return '';
+        return raw
+            .replace(/<!--[\s\S]*?-->/g, ' ')
+            .replace(/<ref[\s\S]*?<\/ref>/gi, ' ')
+            .replace(/<ref[^>]*\/>/gi, ' ')
+            .replace(/\[\[([^\]]+)\]\]/g, (m, p1) => {
+                const parts = p1.split('|');
+                return ' ' + parts[parts.length - 1] + ' ';
+            })
+            .replace(/\{\{[^|}]*\|/g, ' ')
+            .replace(/[{}\[\]|*]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .toLowerCase();
+    }
+
+    function classifyArtistSubgenre(text, isGerman) {
+        const t = text.toLowerCase();
+        
+        // 1. Electronic & Club Subgenres
+        if (/\b(schranz|hardtechno|hard techno)\b/.test(t)) return ['Schranz'];
+        if (/\b(techno|minimal techno|acid techno|peak time techno|hard dance)\b/.test(t)) return ['Techno'];
+        if (/\b(tech house|deep house|house music|house)\b/.test(t)) return ['House'];
+        if (/\b(psytrance|goa|trance)\b/.test(t)) return ['Trance / Psytrance'];
+        if (/\b(drum and bass|drum & bass|dnb|jungle)\b/.test(t)) return ['Drum & Bass'];
+        if (/\b(dubstep|brostep|bass music)\b/.test(t)) return ['Dubstep / Bass'];
+
+        // 2. Metal & Core Subgenres
+        if (/\b(nu[- ]?metal|new metal)\b/.test(t)) return [isGerman ? 'Deutsch Nu-Metal' : 'Nu-Metal'];
+        if (/\b(metalcore|mathcore|deathcore|beatdown hardcore|beatdown|post[- ]?hardcore)\b/.test(t)) {
+            return [isGerman ? 'Deutsch Metalcore' : 'Metalcore'];
         }
+        if (/\b(gothic metal|symphonic metal)\b/.test(t)) return [isGerman ? 'Deutsch Gothic Metal' : 'Gothic Metal'];
+        if (/\b(gothic rock|goth rock|goth\b)/.test(t)) return [isGerman ? 'Deutsch Gothic Rock' : 'Gothic Rock'];
+        if (/\b(neue deutsche härte|industrial metal)\b/.test(t)) return [isGerman ? 'Deutsch Metal' : 'Industrial Metal'];
+        if (/\b(death metal|melodic death metal)\b/.test(t)) return [isGerman ? 'Deutsch Death Metal' : 'Death Metal'];
+        if (/\b(thrash metal|power metal|black metal|heavy metal|metal)\b/.test(t)) return [isGerman ? 'Deutsch Metal' : 'Metal'];
+
+        // 3. Punk & Rock Subgenres
+        if (/\b(deutschpunk|fun[- ]?punk|punk rock|punkrock|hardcore punk|punk|oi!|oi\b)/.test(t)) {
+            return [isGerman ? 'Deutschpunk' : 'Punk Rock'];
+        }
+        if (/\b(deutschrock)\b/.test(t)) return ['Deutschrock'];
+        if (/\b(pop[- ]?punk|post[- ]?grunge|grunge)\b/.test(t)) return [isGerman ? 'Deutschrock' : 'Alternative Rock'];
+        if (/\b(hard rock|alternative rock|indie rock|rockmusik|rock)\b/.test(t)) {
+            return [isGerman ? 'Deutschrock' : 'Rock'];
+        }
+
+        // 4. Hip-Hop & Rap Subgenres
+        if (/\b(deutschrap|cloud rap|trap|hip[- ]?hop|hip hop|rap|rapper|gangsta rap)\b/.test(t)) {
+            return [isGerman ? 'Deutscher Hip-Hop / Rap' : 'Hip-Hop / Rap'];
+        }
+
+        // 5. Pop, R&B, Soul & Electronic fallback
+        if (/\b(r&b|contemporary r&b|soul|neo[- ]?soul|alt[- ]?r&b)\b/.test(t)) return ['R&B / Soul'];
+        if (/\b(soundtrack|score|film score|video game music)\b/.test(t)) return ['Soundtrack'];
+        if (/\b(electro|electronic|dance|edm|synth[- ]?pop)\b/.test(t)) return ['Electronic'];
+        if (/\b(pop|synthpop|dance[- ]?pop|indie pop)\b/.test(t)) return [isGerman ? 'Deutschpop' : 'Pop'];
+
         return [];
     }
 
-    let isBackgroundScanning = false;
+    async function fetchDeepArtistGenre(artistName) {
+        if (!artistName || !artistName.trim()) return [];
+        const cleanName = artistName.trim();
+        let genreSnippet = '';
+        let isGerman = false;
+
+        // 1. Wikipedia DE (Präzise für Herkunft Deutschland/Österreich/Schweiz & deutsche Genres)
+        try {
+            const deUrl = `https://de.wikipedia.org/w/api.php?action=query&prop=revisions&titles=${encodeURIComponent(cleanName)}&rvprop=content&rvsection=0&format=json&redirects=1`;
+            const resp = await fetchWithTimeout(fetch(deUrl, { headers: { 'User-Agent': 'SpicetifyGenreClassifier/2.0' } }), 3500);
+            if (resp && resp.ok) {
+                const data = await resp.json();
+                const page = Object.values(data.query?.pages || {})[0];
+                if (page && page.revisions) {
+                    const c = page.revisions[0]['*'] || '';
+                    const mGenre = c.match(/\|\s*Genre\s*=\s*([\s\S]*?)(?=\n\s*\||\n\}\})/i) || c.match(/\|\s*genre\s*=\s*([\s\S]*?)(?=\n\s*\||\n\}\})/i);
+                    if (mGenre) genreSnippet += ' ' + cleanWikiText(mGenre[1]);
+                    const mH = c.match(/\|\s*Herkunft\s*=\s*([\s\S]*?)(?=\n\s*\||\n\}\})/i);
+                    if (mH && /deutschland|österreich|schweiz|berlin|düsseldorf|hamburg|münchen|köln|frankfurt/i.test(mH[1])) {
+                        isGerman = true;
+                    }
+                }
+            }
+        } catch(_) {}
+
+        // 2. Wikipedia EN (Exzellent für internationale Subgenres: Nu Metal, Metalcore, Gothic, Techno, etc.)
+        try {
+            const enUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles=${encodeURIComponent(cleanName)}&rvprop=content&rvsection=0&format=json&redirects=1`;
+            const resp = await fetchWithTimeout(fetch(enUrl, { headers: { 'User-Agent': 'SpicetifyGenreClassifier/2.0' } }), 3500);
+            if (resp && resp.ok) {
+                const data = await resp.json();
+                const page = Object.values(data.query?.pages || {})[0];
+                if (page && page.revisions) {
+                    const c = page.revisions[0]['*'] || '';
+                    const mGenre = c.match(/\|\s*genre\s*=\s*([\s\S]*?)(?=\n\s*\|[a-z_]+|\n\}\})/i);
+                    if (mGenre) genreSnippet += ' ' + cleanWikiText(mGenre[1]);
+                    const mO = c.match(/\|\s*origin\s*=\s*([\s\S]*?)(?=\n\s*\|[a-z_]+|\n\}\})/i);
+                    if (mO && /germany|austria|switzerland/i.test(mO[1])) isGerman = true;
+                }
+            }
+        } catch(_) {}
+
+        // 3. Fallback: Wikipedia DE Volltext-Snippet
+        if (!genreSnippet || genreSnippet.trim().length < 4) {
+            try {
+                const sUrl = `https://de.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanName)}&format=json`;
+                const resp = await fetchWithTimeout(fetch(sUrl, { headers: { 'User-Agent': 'SpicetifyGenreClassifier/2.0' } }), 3500);
+                if (resp && resp.ok) {
+                    const data = await resp.json();
+                    const snips = (data.query?.search || []).map(s => s.snippet).join(' ');
+                    if (snips.length > 20) {
+                        genreSnippet += ' ' + cleanWikiText(snips);
+                        if (/deutsch|berlin|düsseldorf|hamburg/i.test(snips)) isGerman = true;
+                    }
+                }
+            } catch(_) {}
+        }
+
+        // 4. Fallback: Deezer API
+        if (!genreSnippet || genreSnippet.trim().length < 4) {
+            try {
+                const dzUrl = `https://api.deezer.com/search?q=${encodeURIComponent(cleanName)}&limit=1`;
+                const resp = await fetchWithTimeout(fetch(dzUrl), 3500);
+                if (resp && resp.ok) {
+                    const data = await resp.json();
+                    const albId = data.data?.[0]?.album?.id;
+                    if (albId) {
+                        const albResp = await fetchWithTimeout(fetch(`https://api.deezer.com/album/${albId}`), 3500);
+                        if (albResp && albResp.ok) {
+                            const alb = await albResp.json();
+                            const gNames = alb.genres?.data?.map(g => g.name).join(' ');
+                            if (gNames) genreSnippet += ' ' + gNames;
+                        }
+                    }
+                }
+            } catch(_) {}
+        }
+
+        // Klassifizieren
+        const classified = classifyArtistSubgenre(genreSnippet, isGerman);
+        if (classified.length > 0) return classified;
+
+        return [];
+    }
 
     async function fetchGenresForArtists(artistsInfoList, onProgress) {
         const cachedList = await getAllArtistGenresFromDB();
         const cachedMap = new Map(cachedList.map(a => [a.id, a]));
 
         const now = Date.now();
-        const TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 Tage gültig
+        const TTL_MS = 60 * 24 * 60 * 60 * 1000; // 60 Tage Cache
 
         const missing = [];
         artistsInfoList.forEach(info => {
@@ -789,25 +913,24 @@
             return cachedMap;
         }
 
-        // Scan aller fehlenden Künstler mit hoher Parallelität (iTunes API ist extrem schnell)
-        const PARALLEL_CONCURRENCY = 8;
+        // Paralleler Scan (5 zeitgleich für maximale Stabilität)
+        const PARALLEL_CONCURRENCY = 5;
         let newFetched = [];
 
         for (let i = 0; i < missing.length; i += PARALLEL_CONCURRENCY) {
             const slice = missing.slice(i, i + PARALLEL_CONCURRENCY);
             if (onProgress) {
-                onProgress(i, missing.length, "");
+                onProgress(i, missing.length, slice[0]?.name || "");
             }
 
             const promises = slice.map(async (info) => {
-                let genres = await fetchGenreFromITunes(info.name);
-                const entry = {
+                let genres = await fetchDeepArtistGenre(info.name);
+                return {
                     id: info.id,
                     name: info.name,
                     genres: genres,
                     images: []
                 };
-                return entry;
             });
 
             try {
@@ -820,7 +943,7 @@
                 console.warn("[LikedGenresTierlist] Batch error:", e);
             }
 
-            if (newFetched.length >= 40) {
+            if (newFetched.length >= 25) {
                 await saveArtistGenresBatchToDB(newFetched);
                 newFetched = [];
             }
@@ -829,8 +952,8 @@
                 onProgress(Math.min(i + PARALLEL_CONCURRENCY, missing.length), missing.length, "");
             }
 
-            // Kurze Pause zur Schonung der Verbindung
-            await new Promise(r => setTimeout(r, 40));
+            // Kurze Pause zur Schonung der Verbindungsrate
+            await new Promise(r => setTimeout(r, 60));
         }
 
         if (newFetched.length > 0) {
