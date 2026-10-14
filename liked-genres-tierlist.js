@@ -1816,6 +1816,7 @@
         }
 
         createOrUpdateToggleButton();
+        initDOMObserver();
 
         const container = ensureCustomContainer();
         if (!container) {
@@ -1847,6 +1848,11 @@
         activateRetries = 0;
         isActive = false;
 
+        if (domObserver) {
+            domObserver.disconnect();
+            domObserver = null;
+        }
+
         document.body.classList.remove('lav-hide-native', 'lgt-active');
 
         if (toggleButton && toggleButton.parentElement) {
@@ -1860,18 +1866,24 @@
         closeGenreDrawer();
     }
 
+    let domDebounceTimer = null;
     function initDOMObserver() {
         if (domObserver) return;
         domObserver = new MutationObserver(() => {
             if (Spicetify.Platform.History.location.pathname === "/collection/tracks") {
-                createOrUpdateToggleButton();
-                if (isViewActive) {
-                    ensureCustomContainer();
-                }
+                if (domDebounceTimer) clearTimeout(domDebounceTimer);
+                domDebounceTimer = setTimeout(() => {
+                    createOrUpdateToggleButton();
+                    if (isViewActive) {
+                        ensureCustomContainer();
+                    }
+                }, 100);
             }
         });
-        const header = document.querySelector('.main-view-container__scroll-node-child') || document.body;
-        domObserver.observe(header, { childList: true, subtree: true });
+        const targetNode = document.querySelector('.main-actionBar-ActionBarRow') ||
+                           document.querySelector('.main-view-container__scroll-node-child') ||
+                           document.body;
+        domObserver.observe(targetNode, { childList: true, subtree: true });
     }
 
     // --- NAVIGATION LISTENER ---
@@ -1882,8 +1894,6 @@
             deactivate();
         }
     });
-
-    initDOMObserver();
 
     // Initial Check
     if (Spicetify.Platform.History.location.pathname === "/collection/tracks") {

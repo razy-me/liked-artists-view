@@ -1142,8 +1142,11 @@
             createOrUpdateToggleButton();
         });
 
-        const header = document.querySelector('.main-view-container__scroll-node-child') || document.body;
-        domObserver.observe(header, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-checked'] });
+        const targetNode = document.querySelector('.main-actionBar-ActionBarRow') ||
+                           document.querySelector('.main-trackList-trackListHeader') ||
+                           document.querySelector('.main-view-container__scroll-node-child') ||
+                           document.body;
+        domObserver.observe(targetNode, { childList: true, subtree: false, attributes: true, attributeFilter: ['class', 'aria-checked'] });
 
         const mainView = document.querySelector('.main-view-container');
         if (mainView) {
